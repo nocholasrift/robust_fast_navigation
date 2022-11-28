@@ -1,0 +1,15 @@
+<launch>
+
+    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="minco_test/costmap/" />
+    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="global_planner/costmap/" />
+    <include file="$(find jackal_navigation)/launch/include/gmapping.launch">
+    </include>
+
+    <node name="gmapping_pose_pub" pkg="jackal_nodes" type="getGmappingPose.py" />
+
+    <!-- MPC Tracking -->
+    <!-- <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
+        <remap from="/odometry/filtered" to="/gmapping/odometry" />
+    </include> -->
+
+</launch>
