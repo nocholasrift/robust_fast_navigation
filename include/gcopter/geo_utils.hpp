@@ -169,7 +169,6 @@ namespace geo_utils
         }
         else
         {
-            ROS_INFO("interior was not found :(");
             return false;
         }
     }

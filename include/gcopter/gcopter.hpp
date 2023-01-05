@@ -672,9 +672,6 @@ namespace gcopter
                 curIH.bottomRows(hPs[i + 1].rows()) = hPs[i + 1];
                 if (!geo_utils::enumerateVs(curIH, curIV))
                 {
-                    std::cout << i << ":\n" << curIH << std::endl;
-                    exit(0);
-                    ROS_INFO("enumerating curIH and curIV failed");
                     return false;
                 }
                 nv = curIV.cols();

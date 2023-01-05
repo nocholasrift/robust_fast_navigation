@@ -1,8 +1,8 @@
 map_type: costmap
-origin_x: -6
-origin_y: -6
-height: 12
-width: 12
+origin_x: -15
+origin_y: -15
+height: 30
+width: 30
 origin_z: 0.0
 z_resolution: 1
 z_voxels: 2
@@ -13,6 +13,7 @@ rolling_window: true
 obstacle_range: 4.5
 raytrace_range: 4.0
 
+observation_persistence: 0.0
 publish_voxel_map: false
 transform_tolerance: 0.5
 meter_scoring: true

@@ -1,15 +1,36 @@
 <launch>
 
-    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="minco_test/costmap/" />
-    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="global_planner/costmap/" />
-    <include file="$(find jackal_navigation)/launch/include/gmapping.launch">
-    </include>
+    <arg name="goal_x" default="0.0" />
+    <arg name="goal_y" default="10.0" />
+    <arg name="odomTopic" default="/odom" />
 
-    <node name="gmapping_pose_pub" pkg="jackal_nodes" type="getGmappingPose.py" />
+    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="robust_planner/costmap/" />
+    <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="minco_test/costmap/" /> -->
+    <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="global_planner/costmap/" /> -->
 
+    <!-- <include file="$(find jackal_navigation)/launch/include/gmapping.launch" /> -->
+
+    <node name="gap_navigation" pkg="barn_challenge" type="gap_navigation" output="screen">
+        <param name="goal_x" value="$(arg goal_x)" />
+        <param name="goal_y" value="$(arg goal_y)" />
+        <param name="left" value="-100" />
+        <param name="top" value="-100" />
+        <param name="bwidth" value="200" />
+        <param name="bheight" value="200" />
+        <param name="gapThresh" value=".65" />
+        <param name="dist" value="10" />
+        <!-- <remap from="/front/scan" to="/truncate/scan" /> -->
+        <remap from="/odometry/filtered" to="$(arg odomTopic)" />
+	</node>
+
+    <node name="gazebo_pose_pub" pkg="robust_fast_navigation" type="getGPS.py" />
+    <!-- <node name="gmapping_pose_pub" pkg="jackal_nodes" type="getGmappingPose.py" /> -->
+    <!-- <node name="global_planner" pkg="global_planner" type="planner" output="screen" /> -->
+    
     <!-- MPC Tracking -->
-    <!-- <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
-        <remap from="/odometry/filtered" to="/gmapping/odometry" />
-    </include> -->
+    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
+        <arg name="odomTopic" value="$(arg odomTopic)" />
+        <remap from="/odometry/filtered" to="$(arg odomTopic)" />
+    </include>
 
 </launch>

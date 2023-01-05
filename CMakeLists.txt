@@ -16,10 +16,14 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   costmap_2d
   decomp_util
+  # jps3d
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
+# add_subdirectory(jps3d)
+# set(jps3d_DIR "/home/nm9ur/catkin_ws/src/robust_fast_navigation/jps3d/")
+# find_package(jps3d REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
 
 
@@ -125,7 +129,9 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${DECOMP_UTIL_INCLUDE_DIRS}
+  # ${JPS3D_INCLUDE_DIRS}
 )
+# link_directories(jps3d/build)
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -141,12 +147,22 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/robust_fast_navigation_node.cpp)
-add_executable(robust_planner src/planner.cpp)
+add_executable(robust_planner src/planner.cpp src/planner_node.cpp src/JPS.cpp)
+# target_include_directories(robust_planner
+#   PUBLIC ${JPS3D_DIR}/include
+# )
 target_link_libraries(robust_planner
   ${catkin_LIBRARIES}
+  # ${JPS3D_LIBRARIES}
   Eigen3::Eigen
-  ipopt
 )
+
+# add_executable(dummy_planner src/dummyPlanner.cpp)
+# target_link_libraries(dummy_planner
+#   ${catkin_LIBRARIES}
+#   Eigen3::Eigen
+# )
+
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
