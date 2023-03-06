@@ -2,11 +2,18 @@
 #include <vector>
 #include <string>
 #include <tf/tf.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
 
 #include <robust_fast_navigation/JPS.h>
 #include <robust_fast_navigation/spline.h>
 #include <robust_fast_navigation/planner.h>
 #include <robust_fast_navigation/corridor.h>
+// #include <robust_fast_navigation/Polytope.h>
+// #include <robust_fast_navigation/Hyperplane.h>
 
 Planner::Planner(ros::NodeHandle& nh){
 
@@ -42,6 +49,13 @@ Planner::Planner(ros::NodeHandle& nh){
     jpsPointsPub = 
         nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
 
+    currPolyPub = 
+        // nh.advertise<robust_fast_navigation::Polytope>("/currPoly", 0);
+        nh.advertise<geometry_msgs::PoseArray>("/currPoly", 0);
+
+    intGoalPub = 
+        nh.advertise<geometry_msgs::Point>("/intermediate_goal", 0);
+
     laserSub = nh.subscribe("/front/scan", 1, &Planner::lasercb, this);
     odomSub = nh.subscribe("/odometry/filtered", 1, &Planner::odomcb, this);
     pathSub = nh.subscribe("/global_planner/planner/plan", 1, &Planner::globalPathcb, this);
@@ -59,8 +73,10 @@ Planner::Planner(ros::NodeHandle& nh){
 }
 
 void Planner::spin(){
-    tf::TransformListener tfListener(ros::Duration(10));
-    costmap = new costmap_2d::Costmap2DROS("costmap", tfListener);
+    //tf::TransformListener tfListener(ros::Duration(10));
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
+    costmap = new costmap_2d::Costmap2DROS("costmap", tfBuffer);
     costmap->start();
     ros::AsyncSpinner spinner(1);
     spinner.start();
@@ -80,6 +96,7 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
     goal(1) = msg->pose.position.y;
 
     _is_goal_set = true;
+    ROS_INFO("goal received!");
 }
 
 void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
@@ -185,6 +202,7 @@ void Planner::visualizeTraj(const Trajectory<D> &traj){
         wptMsg.scale.x = 0.35;
         wptMsg.scale.y = 0.35;
         wptMsg.scale.z = 0.35;
+        wptMsg.pose.orientation.w = 1;
 
         Eigen::MatrixXd wps = traj.getPositions();
         for (int i = 0; i < wps.cols(); i++){
@@ -550,6 +568,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
     //     trajPub.publish(convertTrajToMsg(traj));
 
     visualizeTraj(traj);
+    pubCurrPoly();
     // exit(0);
 
     double totalT = (ros::Time::now() - a).toSec();
@@ -579,4 +598,52 @@ void Planner::goalLoop(const ros::TimerEvent&){
     msg.pose.orientation.w = 1;
 
     goalPub.publish(msg);
+}
+
+void Planner::pubCurrPoly(){
+
+    geometry_msgs::PoseArray msg;
+    Eigen::MatrixX4d currPoly = hPolys[0];
+    for(int i = 0; i < currPoly.rows(); ++i){
+        geometry_msgs::Pose p;
+        p.orientation.x = currPoly.row(i)[0];
+        p.orientation.y = currPoly.row(i)[1];
+        p.orientation.z = currPoly.row(i)[2];
+        p.orientation.w = currPoly.row(i)[3];
+        msg.poses.push_back(p);
+
+        // hypeMsg.a = currPoly.row(i)[0];
+        // hypeMsg.b = currPoly.row(i)[1];
+        // hypeMsg.c = currPoly.row(i)[2];
+        // hypeMsg.d = currPoly.row(i)[3];
+        // msg.planes.push_back(hypeMsg);
+    }
+
+    currPolyPub.publish(msg);
+
+    for(int i = 1; ((double)i)*.1 < traj.getTotalDuration(); i++){
+        Eigen::Vector3d pos = traj.getPos(((double)i)*.1);
+        bool is_in = true;
+        for(int j = 0; j < currPoly.rows(); j++){
+            Eigen::Vector4d plane = currPoly.row(j);
+            double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
+            if (dot > 0){
+                is_in = false;
+                break;
+            }
+        }
+        if (!is_in){
+            Eigen::MatrixXd wpt = traj.getPos((i-1)*.1);
+            std::cout << "t is: " << (i-1)*.1 << "/" << traj.getTotalDuration() << std::endl;
+            std::cout << "wpt is " << wpt.transpose() << std::endl;
+            geometry_msgs::Point pMsg;
+            pMsg.x = wpt(0);
+            pMsg.y = wpt(1);
+            pMsg.z = wpt(2);
+            intGoalPub.publish(pMsg);
+            break;
+        }
+    }
+
+    exit(0);
 }

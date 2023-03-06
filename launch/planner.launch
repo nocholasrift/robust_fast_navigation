@@ -8,7 +8,7 @@
 
         <remap from="/planner_goal" to="/move_base_simple/goal" />
         <!-- <remap from="/planner_goal" to="/gapGoal" /> -->
-        <remap from="/odometry/filtered" to="/odom" />
+        <!-- <remap from="/odometry/filtered" to="/odom" /> -->
     </node>
 
 </launch>

@@ -40,6 +40,7 @@ private:
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
     void controlLoop(const ros::TimerEvent&);
     void goalLoop(const ros::TimerEvent&);
+    void pubCurrPoly();
 
     template <int D>
     trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D> &traj);
@@ -55,7 +56,7 @@ private:
     ros::Timer controlTimer, goalTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, 
-    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, initPointPub;
+    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub;
 
     costmap_2d::Costmap2DROS* costmap;
     std::vector<Eigen::Vector2d> astarPath;

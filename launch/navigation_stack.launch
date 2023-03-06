@@ -8,7 +8,7 @@
     <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="minco_test/costmap/" /> -->
     <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="global_planner/costmap/" /> -->
 
-    <!-- <include file="$(find jackal_navigation)/launch/include/gmapping.launch" /> -->
+    <include file="$(find jackal_navigation)/launch/include/gmapping.launch" />
 
     <!-- <node name="gap_navigation" pkg="barn_challenge" type="gap_navigation" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
@@ -27,9 +27,9 @@
     <!-- <node name="global_planner" pkg="global_planner" type="planner" output="screen" /> -->
     
     <!-- MPC Tracking -->
-    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
+    <!-- <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
         <arg name="odomTopic" value="$(arg odomTopic)" />
         <remap from="/odometry/filtered" to="$(arg odomTopic)" />
-    </include>
+    </include> -->
 
 </launch>
