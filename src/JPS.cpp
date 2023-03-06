@@ -294,7 +294,7 @@ void JPSPlanner::JPS(){
     }
 }
 
-std::vector<Eigen::Vector2d> JPSPlanner::getPath(){
+std::vector<Eigen::Vector2d> JPSPlanner::getPath(bool simplify){
 
     std::vector<Eigen::Vector2d> ret;
 
@@ -322,6 +322,20 @@ std::vector<Eigen::Vector2d> JPSPlanner::getPath(){
     x = i - y*sizeX;
     ret.push_back(Eigen::Vector2d(x,y));
     std::reverse(ret.begin(), ret.end());
+
+    if (simplify){
+
+        for(int i = 1; i < ret.size()-1; ){
+            
+            if ((ret[i+1][0] == ret[i][0] && ret[i-1][0]== ret[i][0]) ||
+                (ret[i+1][1] == ret[i][1] && ret[i-1][1] == ret[i][1]) )
+                ret.erase(ret.begin()+i);
+            else
+                i++;
+        
+        }
+
+    }
     
     return ret;
 }

@@ -2,12 +2,12 @@
 
     <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen">
         <param name="max_velocity" value="1" />
-        <param name="planner_frequency" value="1" />
+        <param name="planner_frequency" value=".5" />
         <param name="teleop" value="false" />
         <param name="frame" value="map" />
 
-        <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
-        <remap from="/planner_goal" to="/gapGoal" />
+        <remap from="/planner_goal" to="/move_base_simple/goal" />
+        <!-- <remap from="/planner_goal" to="/gapGoal" /> -->
         <remap from="/odometry/filtered" to="/odom" />
     </node>
 

@@ -1,7 +1,10 @@
 #ifndef CORRIDOR_H
 #define CORRIDOR_H
 
+#include <iostream>
 #include <ros/ros.h>
+#include <gcopter/firi.hpp>
+#include <gcopter/geo_utils.hpp>
 #include <visualization_msgs/Marker.h>
 
 #include <decomp_util/seed_decomp.h>
@@ -10,6 +13,78 @@
 #include <decomp_geometry/geometric_utils.h>
 
 namespace corridor{
+
+    inline void convexCover(const std::vector<Eigen::Vector3d> &path,
+                            const std::vector<Eigen::Vector3d> &points,
+                            const Eigen::Vector3d &lowCorner,
+                            const Eigen::Vector3d &highCorner,
+                            const double &progress,
+                            const double &range,
+                            std::vector<Eigen::MatrixX4d> &hpolys,
+                            const double eps = 1.0e-6)
+    {
+        hpolys.clear();
+        const int n = path.size();
+        Eigen::Matrix<double, 6, 4> bd = Eigen::Matrix<double, 6, 4>::Zero();
+        bd(0, 0) = 1.0;
+        bd(1, 0) = -1.0;
+        bd(2, 1) = 1.0;
+        bd(3, 1) = -1.0;
+        bd(4, 2) = 1.0;
+        bd(5, 2) = -1.0;
+
+        Eigen::MatrixX4d hp, gap;
+        Eigen::Vector3d a, b = path[0];
+        std::vector<Eigen::Vector3d> valid_pc;
+        std::vector<Eigen::Vector3d> bs;
+        valid_pc.reserve(points.size());
+        for (int i = 1; i < n;)
+        {
+            a = b;
+            if ((a - path[i]).norm() > progress)
+            {
+                b = (path[i] - a).normalized() * progress + a;
+            }
+            else
+            {
+                b = path[i];
+                i++;
+            }
+            bs.emplace_back(b);
+
+            bd(0, 3) = -std::min(std::max(a(0), b(0)) + range, highCorner(0));
+            bd(1, 3) = +std::max(std::min(a(0), b(0)) - range, lowCorner(0));
+            bd(2, 3) = -std::min(std::max(a(1), b(1)) + range, highCorner(1));
+            bd(3, 3) = +std::max(std::min(a(1), b(1)) - range, lowCorner(1));
+            bd(4, 3) = -std::min(std::max(a(2), b(2)) + range, highCorner(2));
+            bd(5, 3) = +std::max(std::min(a(2), b(2)) - range, lowCorner(2));
+
+            valid_pc.clear();
+            for (const Eigen::Vector3d &p : points)
+            {
+                if ((bd.leftCols<3>() * p + bd.rightCols<1>()).maxCoeff() < 0.0)
+                {
+                    valid_pc.emplace_back(p);
+                }
+            }
+            Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(valid_pc[0].data(), 3, valid_pc.size());
+
+            firi::firi(bd, pc, a, b, hp);
+
+            if (hpolys.size() != 0)
+            {
+                const Eigen::Vector4d ah(a(0), a(1), a(2), 1.0);
+                if (3 <= ((hp * ah).array() > -eps).cast<int>().sum() +
+                             ((hpolys.back() * ah).array() > -eps).cast<int>().sum())
+                {
+                    firi::firi(bd, pc, a, a, gap, 1);
+                    hpolys.emplace_back(gap);
+                }
+            }
+
+            hpolys.emplace_back(hp);
+        }
+    }
 
     // following bresenham / raycast method taken with <3 from https://docs.ros.org/en/api/costmap_2d/html/costmap__2d_8h_source.html
     inline void bresenham(const costmap_2d::Costmap2D& _map, unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
@@ -285,6 +360,58 @@ namespace corridor{
     }
 
 
+    inline std::vector<Eigen::MatrixX4d> 
+    simplifyCorridor(const std::vector<Eigen::MatrixX4d>& polys){
+
+        int count = 0;
+        std::vector<Eigen::MatrixX4d> ret = polys;
+        std::vector<bool> inds (polys.size());
+        inds[0] = true;
+        inds[polys.size()-1] = true;
+        inds[polys.size()-2] = true;
+
+        bool removed = false;
+        // do{
+            removed = false;
+            for(int i = 0; i < ret.size()-3; ){
+                
+                // int j = i;
+                // while(geo_utils::overlap(polys[i], polys[j+1]) &&
+                //             geo_utils::overlap(polys[i], polys[j+2])){
+
+                //     polys.erase(polys.begin()+j);
+                // }
+
+                // inds[i+1] = !(geo_utils::overlap(polys[i], polys[i+1]) &&
+                //             geo_utils::overlap(polys[i], polys[i+2]));
+                //     // ret.erase(ret.begin()+i+1);
+                // if(geo_utils::overlap(polys[i], polys[i+1]) &&
+                //             geo_utils::overlap(polys[i], polys[i+2]))
+                //             std::cout << i+1 << " is not neccessary" << std::endl;
+                std::cout << i << "/" << ret.size() << std::endl;
+                if(geo_utils::overlap(ret[i], ret[i+1]) &&
+                            geo_utils::overlap(ret[i], ret[i+2])){
+                    ret.erase(ret.begin()+i+1);
+                    // std::cout << "^removed" << std::endl;
+                    removed = true;
+                } else{
+                    i++;
+                }
+            }
+
+        // } while(removed);
+
+        // for(int i = 0; i < polys.size(); i++){
+
+        //     if(inds[i])
+        //         ret.push_back(polys[i]);
+        // }
+
+        return ret;
+
+    }
+
+
     inline std::vector<Eigen::MatrixX4d> createCorridor(
         const std::vector<Eigen::Vector2d>& path, const costmap_2d::Costmap2D& _map,
         const vec_Vec2f& _obs){
@@ -317,18 +444,84 @@ namespace corridor{
         return polys;
     }
 
+    inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys)
+    {
+        std::vector<Eigen::MatrixX4d> htemp = hpolys;
+        if (htemp.size() == 1)
+        {
+            Eigen::MatrixX4d headPoly = htemp.front();
+            htemp.insert(htemp.begin(), headPoly);
+        }
+        hpolys.clear();
+
+        int M = htemp.size();
+        Eigen::MatrixX4d hPoly;
+        bool overlap;
+        std::deque<int> idices;
+        idices.push_front(M - 1);
+        for (int i = M - 1; i >= 0; i--)
+        {
+            for (int j = 0; j < i; j++)
+            {
+                if (j < i - 1)
+                {
+                    overlap = geo_utils::overlap(htemp[i], htemp[j], 0.01);
+                }
+                else
+                {
+                    overlap = true;
+                }
+                if (overlap)
+                {
+                    idices.push_front(j);
+                    i = j + 1;
+                    break;
+                }
+            }
+        }
+        for (const auto &ele : idices)
+        {
+            hpolys.push_back(htemp[ele]);
+        }
+    }
+
     inline std::vector<Eigen::MatrixX4d> createCorridorJPS(
         const std::vector<Eigen::Vector2d>& path, const costmap_2d::Costmap2D& _map,
         const vec_Vec2f& _obs){
 
+        std::vector<Eigen::Vector3d> path3d, obs3d;
+        for(Eigen::Vector2d p : path){
+            path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
+        }
+
+        for(Vec2f ob : getPaddedScan(_map, path[0][0], path[0][1], _obs)){
+            obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
+        }
+
         std::vector<Eigen::MatrixX4d> polys;
+        double x = _map.getOriginX();
+        double y = _map.getOriginY();
+        double w = _map.getSizeInMetersX();
+        double h = _map.getSizeInMetersY();
+
+        // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
+        // exit(0);
+        convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
+            Eigen::Vector3d(x+w,y+h,.1),7.0, 3.0, polys);
+        // std::vector<Eigen::MatrixX4d> r = simplifyCorridor(polys);
+        // return r;
+        shortCut(polys);
+        return polys;
+
         for(int i = 0; i < path.size()-1; i++){
             polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));
         }
         
-        return polys;
+        std::vector<Eigen::MatrixX4d> ret = simplifyCorridor(polys);
+        return ret;
+        // shortCut(polys);
+        // return polys;
     }
-
 
 }
 

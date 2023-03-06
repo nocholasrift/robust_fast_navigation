@@ -55,7 +55,7 @@ private:
     ros::Timer controlTimer, goalTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, 
-    edgePub, goalPub, paddedLaserPub, jpsPub;
+    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, initPointPub;
 
     costmap_2d::Costmap2DROS* costmap;
     std::vector<Eigen::Vector2d> astarPath;
@@ -65,7 +65,7 @@ private:
     Trajectory<5> traj;
 
     const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt;
+    double _max_vel, _dt, _const_factor;
 };
 
 #endif

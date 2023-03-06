@@ -28,6 +28,8 @@ Planner::Planner(ros::NodeHandle& nh){
         nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
     edgePub = 
         nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
+    initPointPub = 
+        nh.advertise<geometry_msgs::PointStamped>("/initPoint", 0);
 
     goalPub = 
         nh.advertise<geometry_msgs::PoseStamped>("/global_planner/goal", 0);
@@ -37,6 +39,8 @@ Planner::Planner(ros::NodeHandle& nh){
 
     jpsPub = 
         nh.advertise<nav_msgs::Path>("/jpsPath", 0);
+    jpsPointsPub = 
+        nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
 
     laserSub = nh.subscribe("/front/scan", 1, &Planner::lasercb, this);
     odomSub = nh.subscribe("/odometry/filtered", 1, &Planner::odomcb, this);
@@ -49,6 +53,7 @@ Planner::Planner(ros::NodeHandle& nh){
 
     _is_init = false;
     _is_goal_set = false;
+    _const_factor = 6.0;
 
     ROS_INFO("Initialized planner!");
 }
@@ -228,7 +233,7 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
     msg.header.frame_id = _frame_str;
 
     double factor = traj.getMaxVelRate() / _max_vel;
-    factor = 5;
+    factor = _const_factor;
     double t = 0.;
 
     std::vector<double> _times, _x, _y;
@@ -303,6 +308,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
     if (!_is_init || !_is_goal_set)
         return;
 
+    if ((_odom(1)-goal(1))*(_odom(1)-goal(1))+(_odom(0)-goal(0))*(_odom(0)-goal(0)) < .2)
+        return;
+
     ros::Time a = ros::Time::now();
 
     costmap_2d::Costmap2D* _map = costmap->getCostmap();
@@ -334,6 +342,20 @@ void Planner::controlLoop(const ros::TimerEvent&){
         jpsPath[i] = Eigen::Vector2d(x,y);
     }
 
+    visualization_msgs::Marker jMsg;
+    jMsg.header.frame_id="map";
+    jMsg.header.stamp = ros::Time::now();
+    jMsg.type=visualization_msgs::Marker::SPHERE_LIST;
+    jMsg.action = visualization_msgs::Marker::ADD;
+    jMsg.id = 90210;
+    jMsg.scale.x = .1;
+    jMsg.scale.y = .1;
+    jMsg.scale.z = .1;
+    jMsg.color.r = 1;
+    jMsg.color.g = 1;
+    jMsg.color.b = 1;
+    jMsg.color.a = 1;
+
     nav_msgs::Path jpsMsg;
     jpsMsg.header.stamp = ros::Time::now();
     jpsMsg.header.frame_id = _frame_str;
@@ -345,15 +367,22 @@ void Planner::controlLoop(const ros::TimerEvent&){
         pMsg.pose.position.z = 0;
         pMsg.pose.orientation.w = 1;
         jpsMsg.poses.push_back(pMsg);
+        
+        geometry_msgs::Point pp;
+        pp.x = p(0);
+        pp.y = p(1);
+        pp.z = 0;
+        jMsg.points.push_back(pp);
     }
 
     jpsPub.publish(jpsMsg);
+    jpsPointsPub.publish(jMsg);
 
     // hPolys = corridor::createCorridor(astarPath, *_map, _obs);
     hPolys = corridor::createCorridorJPS(jpsPath, *_map, _obs);
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
-    // ROS_INFO("%lu/%lu", jpsPath.size(), hPolys.size());
+    ROS_INFO("%lu/%lu", jpsPath.size(), hPolys.size());
 
     // initial and final states
     Eigen::Matrix3d initialPVA;
@@ -369,14 +398,24 @@ void Planner::controlLoop(const ros::TimerEvent&){
         not_first = true;
         double maxVel = traj.getMaxVelRate();
         double factor = maxVel / _max_vel;
-        factor = 5;
+        factor = _const_factor;
         // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
-        double t = (a-start).toSec()/factor + .1;
+        // double t = (a-start).toSec()/factor + .1;
+        double t = (a-start).toSec()/factor + .15;
         double tmpT = t;
         
         int pieceIdx = traj.locatePieceIdx(tmpT);
         Piece<5> currPiece = traj[pieceIdx];
         double pieceDuration = currPiece.getDuration();
+
+        Eigen::Vector3d iPos = traj.getPos(t);
+        geometry_msgs::PointStamped poseMsg;
+        poseMsg.header.frame_id = "map";
+        poseMsg.header.stamp = ros::Time::now();
+        poseMsg.point.x = iPos[0];
+        poseMsg.point.y = iPos[1];
+        poseMsg.point.z = iPos[2];
+        initPointPub.publish(poseMsg);
 
         // initialPVA.col(0) = traj.getPos(t);
         // initialPVA.col(1) = traj.getVel(t);
@@ -388,7 +427,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
         // }
 
         // initialPVA.col(0) = currPiece.getPos(pieceStartT + pieceDuration);
-        initialPVA.col(0) = currPiece.getPos(pieceDuration);
+        // initialPVA.col(0) = currPiece.getPos(pieceDuration);
         
         // if (factor > 1){
         //     initialPVA.col(1) = currPiece.getVel(pieceStartT + pieceDuration)/factor;
@@ -398,16 +437,20 @@ void Planner::controlLoop(const ros::TimerEvent&){
         //     initialPVA.col(2) = currPiece.getAcc(pieceStartT + pieceDuration);
         // }
 
-        initialPVA.col(1) = currPiece.getVel(pieceDuration);
-        initialPVA.col(2) = currPiece.getAcc(pieceDuration);
+        // initialPVA.col(1) = currPiece.getVel(pieceDuration);
+        // initialPVA.col(2) = currPiece.getAcc(pieceDuration);
+
+        initialPVA.col(0) = traj.getPos(t);
+        initialPVA.col(1) = traj.getVel(t);
+        initialPVA.col(2) = traj.getAcc(t);
 
         // std::cout << "piece: " << traj.locatePieceIdx(t) << "/" << traj.getPieceNum() << std::endl;
         // std::cout << t << "/" << traj.getTotalDuration() << std::endl;
-        std::cout << t << "\t" << factor << "\t";
-        std::cout << pieceIdx << "/" << traj.getPieceNum() <<std::endl;
-        std::cout << (a-start).toSec() << "\t" << (a-start).toSec()/factor << std::endl;
-        std::cout << initialPVA.col(0) << std::endl;
-        std::cout << "*******************************" << std::endl;
+        // std::cout << t << "\t" << factor << "\t";
+        // std::cout << pieceIdx << "/" << traj.getPieceNum() <<std::endl;
+        // std::cout << (a-start).toSec() << "\t" << (a-start).toSec()/factor << std::endl;
+        // std::cout << initialPVA.col(0) << std::endl;
+        // std::cout << "*******************************" << std::endl;
 
     }
 
@@ -439,6 +482,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     gcopter::GCOPTER_PolytopeSFC gcopter;
 
+    ROS_INFO("setting up");
     if(!gcopter.setup(
         20.0,   //time weight
         initialPVA, 
@@ -455,11 +499,14 @@ void Planner::controlLoop(const ros::TimerEvent&){
         return;
     }
 
+    ROS_INFO("solving");
     Trajectory<5> newTraj;
     if (std::isinf(gcopter.optimize(newTraj, 1e-5))){
         ROS_INFO("solver could not find trajectory");
         return;
     }
+
+    ROS_INFO("stitching trajectories");
 
     // if (std::isinf(gcopter.optimize(traj, 1e-5))){
     //     ROS_INFO("solver could not find trajectory");
@@ -469,18 +516,22 @@ void Planner::controlLoop(const ros::TimerEvent&){
     if (traj.getPieceNum() != 0){
         double maxVel = traj.getMaxVelRate();
         double factor = maxVel / _max_vel;
-        factor = 5;
+        factor = _const_factor;
         // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
-        double t = (a-start).toSec()/factor + .1;
-
+        // double t = (a-start).toSec()/factor + .1;
+        double t = (a-start).toSec()/factor + .15;
         int pieceIdx = traj.locatePieceIdx(t);
-
+        
         std::vector<double> durs;
         std::vector<typename Piece<5>::CoefficientMat> cMats;
-        for(int i = 0; i <= pieceIdx; i++){
+        for(int i = 0; i < pieceIdx; i++){
             durs.push_back(traj[i].getDuration());
             cMats.push_back(traj[i].getCoeffMat());
         }
+
+        // truncate piece where initial state is for append
+        durs.push_back(t);
+        cMats.push_back(traj[pieceIdx].getCoeffMat());
 
         Trajectory<5> tmpTraj(durs, cMats);
         tmpTraj.append(newTraj);
@@ -504,11 +555,11 @@ void Planner::controlLoop(const ros::TimerEvent&){
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
     astarPath.clear();
-    _is_goal_set = false;
+    // _is_goal_set = false;
 
 
     // if (not_first)
-    //     exit(0);
+        // exit(0);
 }
 
 void Planner::goalLoop(const ros::TimerEvent&){

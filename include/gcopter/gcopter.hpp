@@ -683,7 +683,6 @@ namespace gcopter
 
             if (!geo_utils::enumerateVs(hPs.back(), curIV))
             {
-                ROS_INFO("enumerating hPs and curIV failed");
                 return false;
             }
             nv = curIV.cols();

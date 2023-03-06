@@ -33,7 +33,7 @@ public:
     void set_destination(int x, int y);
     void set_map(unsigned char* map, int sizeX, int sizeY);
     void JPS();
-    std::vector<Eigen::Vector2d> getPath();
+    std::vector<Eigen::Vector2d> getPath(bool simplify = true);
 
 
 private:
