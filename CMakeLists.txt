@@ -18,7 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
   decomp_util
   tf
   message_generation
-  # jps3d
+  jps3d
 )
 
 ## System dependencies are found with CMake's conventions
@@ -156,8 +156,19 @@ add_executable(robust_planner src/planner.cpp src/planner_node.cpp src/JPS.cpp)
 # )
 target_link_libraries(robust_planner
   ${catkin_LIBRARIES}
-  # ${JPS3D_LIBRARIES}
+  ${JPS3D_LIBRARIES}
   Eigen3::Eigen
+)
+
+add_executable(brs_manager src/BRSManager.cpp)
+target_link_libraries(brs_manager
+  ${catkin_LIBRARIES}
+  Eigen3::Eigen
+)
+
+add_executable(publish_pf_pose src/publish_pf_pose.cpp)
+target_link_libraries(publish_pf_pose
+  ${catkin_LIBRARIES}
 )
 
 # add_executable(dummy_planner src/dummyPlanner.cpp)

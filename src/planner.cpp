@@ -20,6 +20,8 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/max_velocity", _max_vel, 1.0);
     nh.param("robust_planner/planner_frequency", _dt, .1);
     nh.param("robust_planner/teleop", _is_teleop, false);
+    nh.param("robust_planner/const_factor", _const_factor, 6.0);
+    nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
     trajVizPub = 
@@ -67,7 +69,8 @@ Planner::Planner(ros::NodeHandle& nh){
 
     _is_init = false;
     _is_goal_set = false;
-    _const_factor = 6.0;
+
+    // map_util = std::make_shared<JPS::OccMapUtil>();
 
     ROS_INFO("Initialized planner!");
 }
@@ -88,6 +91,11 @@ void Planner::clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg){
     goal(0) = msg->point.x;
     goal(1) = msg->point.y;
     _is_goal_set = true;
+    _is_goal_reset = true;
+}
+
+void Planner::projectIntoMap(const Eigen::Vector2d& goal){
+    
 }
 
 void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
@@ -149,29 +157,6 @@ void Planner::lasercb(const sensor_msgs::LaserScan::ConstPtr& msg){
 
 		_obs.push_back(Vec2f(x,y));
 	}
-
-    // vec_Vec2f padded = corridor::getPaddedScan(*costmap->getCostmap(), 0,0, _obs);
-    
-    // visualization_msgs::Marker pointMsg;
-    // pointMsg.header.stamp = ros::Time::now();
-    // pointMsg.header.frame_id = _frame_str;
-    // pointMsg.type= visualization_msgs::Marker::POINTS;
-    // pointMsg.action = visualization_msgs::Marker::ADD;
-    // pointMsg.id = 123;
-    // pointMsg.scale.x = .1;
-    // pointMsg.color.r = 0;
-    // pointMsg.color.g = 0;
-    // pointMsg.color.b = 1;
-    // pointMsg.color.a = 1;
-    // for(Vec2f p : padded){
-    //     geometry_msgs::Point pmsg;
-    //     pmsg.x = p[0];
-    //     pmsg.y = p[1];
-    //     pmsg.z = 0;
-    //     pointMsg.points.push_back(pmsg);
-    // }
-
-    // paddedLaserPub.publish(pointMsg);
 
 }
 
@@ -254,73 +239,91 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
     factor = _const_factor;
     double t = 0.;
 
-    std::vector<double> _times, _x, _y;
-    while (t < traj.getTotalDuration()){
-        Eigen::Vector3d pos = traj.getPos(t);
-
-        _times.push_back(t*factor);
-        _x.push_back(pos(0));
-        _y.push_back(pos(1));
-
-        t += .1/factor;
-
-    }
-
-    tk::spline sX = tk::spline(_times, _x, tk::spline::cspline,false,
-                                tk::spline::first_deriv, _vel.x(),
-                                tk::spline::first_deriv, _vel.x());
-    tk::spline sY = tk::spline(_times, _y, tk::spline::cspline,false,
-                                tk::spline::first_deriv, _vel.y(),
-                                tk::spline::first_deriv, _vel.y());
-
+    // std::vector<double> _times, _x, _y;
+    // bool ran = false;
     // while (t < traj.getTotalDuration()){
     //     Eigen::Vector3d pos = traj.getPos(t);
-    //     Eigen::Vector3d vel = traj.getVel(t);
-    //     Eigen::Vector3d acc = traj.getAcc(t);
 
-    //     trajectory_msgs::JointTrajectoryPoint pt;
-    //     pt.positions.push_back(pos(0));
-    //     pt.positions.push_back(pos(1));
+    //     if (!ran){
+    //         ROS_INFO("first point is (%.2f, %.2f)", pos(0), pos(1));
+    //         ran = true;
+    //     }
 
-    //     pt.velocities.push_back(vel(0)/factor);
-    //     pt.velocities.push_back(vel(1)/factor);
-
-    //     pt.accelerations.push_back(acc(0)/(factor*factor));
-    //     pt.accelerations.push_back(acc(1)/(factor*factor));
-
-    //     pt.time_from_start = ros::Duration(t*factor);
-
-    //     msg.points.push_back(pt);
-        
-    //     // ROS_INFO("%.2f/%.2f:\t(%.2f, %.2f)",t*factor,traj.getTotalDuration()*factor, pos(0), pos(1));
+    //     _times.push_back(t*factor);
+    //     _x.push_back(pos(0));
+    //     _y.push_back(pos(1));
 
     //     t += .1/factor;
+
     // }
 
-    t = 0;
-    for(int i = 0; i < _times.size(); i++){
+    // double velXA = traj.getVel(0)[0];
+    // double velYA = traj.getVel(0)[1];
+
+    // double velXB = traj.getVel(traj.getTotalDuration())[0]/_const_factor;
+    // double velYB = traj.getVel(traj.getTotalDuration())[1]/_const_factor;
+
+    // ROS_INFO("(not factored) boundary condition A is (%.2f, %.2f)", velXA*_const_factor, velYA*_const_factor);
+    // ROS_INFO("boundary condition A is (%.2f, %.2f)", velXA, velYA);
+    // ROS_INFO("boundary condition B is (%.2f, %.2f)", velXB, velYB);
+
+    // tk::spline sX = tk::spline(_times, _x, tk::spline::cspline,false,
+    //                             tk::spline::first_deriv, velXA,
+    //                             tk::spline::first_deriv, velXA);
+    // tk::spline sY = tk::spline(_times, _y, tk::spline::cspline,false,
+    //                             tk::spline::first_deriv, velYA,
+    //                             tk::spline::first_deriv, velYA);
+
+    while (t < traj.getTotalDuration()){
+        Eigen::Vector3d pos = traj.getPos(t);
+        Eigen::Vector3d vel = traj.getVel(t);
+        Eigen::Vector3d acc = traj.getAcc(t);
+
         trajectory_msgs::JointTrajectoryPoint pt;
-        pt.positions.push_back(sX(t));
-        pt.positions.push_back(sY(t));
+        pt.positions.push_back(pos(0));
+        pt.positions.push_back(pos(1));
+        pt.positions.push_back(pos(2));
 
-        pt.velocities.push_back(sX.deriv(1,t));
-        pt.velocities.push_back(sY.deriv(1,t));
+        pt.velocities.push_back(vel(0)/factor);
+        pt.velocities.push_back(vel(1)/factor);
+        pt.velocities.push_back(vel(2)/factor);
 
-        pt.accelerations.push_back(sX.deriv(2,t));
-        pt.accelerations.push_back(sY.deriv(2,t));
+        pt.accelerations.push_back(acc(0)/(factor*factor));
+        pt.accelerations.push_back(acc(1)/(factor*factor));
+        pt.accelerations.push_back(acc(2)/(factor*factor));
 
-        pt.time_from_start = ros::Duration(t);
+        pt.time_from_start = ros::Duration(t*factor);
 
         msg.points.push_back(pt);
-        t += .1;
+        
+        // ROS_INFO("%.2f/%.2f:\t(%.2f, %.2f)",t*factor,traj.getTotalDuration()*factor, pos(0), pos(1));
+
+        t += .1/factor;
     }
+
+    // t = 0;
+    // for(int i = 0; i < _times.size(); i++){
+    //     trajectory_msgs::JointTrajectoryPoint pt;
+    //     pt.positions.push_back(sX(t));
+    //     pt.positions.push_back(sY(t));
+
+    //     pt.velocities.push_back(sX.deriv(1,t));
+    //     pt.velocities.push_back(sY.deriv(1,t));
+
+    //     pt.accelerations.push_back(sX.deriv(2,t));
+    //     pt.accelerations.push_back(sY.deriv(2,t));
+
+    //     pt.time_from_start = ros::Duration(t);
+
+    //     msg.points.push_back(pt);
+    //     t += .1;
+    // }
 
     return msg;
 }
 
 void Planner::controlLoop(const ros::TimerEvent&){
 
-    static ros::Time start;
 
     // if (!_is_init || astarPath.size() == 0 || !_is_goal_set)
     if (!_is_init || !_is_goal_set)
@@ -329,13 +332,13 @@ void Planner::controlLoop(const ros::TimerEvent&){
     if ((_odom(1)-goal(1))*(_odom(1)-goal(1))+(_odom(0)-goal(0))*(_odom(0)-goal(0)) < .2)
         return;
 
-    ros::Time a = ros::Time::now();
 
     costmap_2d::Costmap2D* _map = costmap->getCostmap();
     costmap->resetLayers();
     costmap->updateMap();
 
-    JPSPlanner jps;
+
+    JPSPlan jps;
     unsigned int sX, sY, eX, eY;
     _map->worldToMap(_odom(0), _odom(1), sX, sY);
     _map->worldToMap(goal(0), goal(1), eX, eY);
@@ -346,13 +349,13 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY());
     jps.JPS();
+
     std::vector<Eigen::Vector2d> jpsPath = jps.getPath();
 
     if (jpsPath.size() == 0){
         ROS_INFO("JPS failed to find path");
         return;
     }
-
 
     for(int i = 0; i < jpsPath.size(); i++){
         double x, y;
@@ -405,7 +408,46 @@ void Planner::controlLoop(const ros::TimerEvent&){
     // initial and final states
     Eigen::Matrix3d initialPVA;
     bool not_first = false;
-    if (traj.getPieceNum() == 0 || _is_teleop){
+
+    ros::Time a = ros::Time::now();
+
+    // if (traj.getPieceNum() == 0 || _is_teleop){
+    //     initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
+    //                     Eigen::Vector3d::Zero(), 
+    //                     Eigen::Vector3d::Zero();
+
+    //     // std::cout << initialPVA << std::endl;
+    // }
+    // else{
+    //     not_first = true;
+    //     double maxVel = traj.getMaxVelRate();
+    //     double factor = maxVel / _max_vel;
+    //     factor = _const_factor;
+    //     // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
+    //     // double t = (a-start).toSec()/factor + .1;
+    //     double t = (a-start).toSec()/factor + _lookahead;
+    //     double tmpT = t;
+        
+    //     int pieceIdx = traj.locatePieceIdx(tmpT);
+    //     Piece<5> currPiece = traj[pieceIdx];
+    //     double pieceDuration = currPiece.getDuration();
+
+    //     Eigen::Vector3d iPos = traj.getPos(t);
+    //     geometry_msgs::PointStamped poseMsg;
+    //     poseMsg.header.frame_id = "map";
+    //     poseMsg.header.stamp = ros::Time::now();
+    //     poseMsg.point.x = iPos[0];
+    //     poseMsg.point.y = iPos[1];
+    //     poseMsg.point.z = iPos[2];
+    //     initPointPub.publish(poseMsg);
+
+    //     initialPVA.col(0) = traj.getPos(t);
+    //     initialPVA.col(1) = traj.getVel(t);
+    //     initialPVA.col(2) = traj.getAcc(t);
+
+    // }
+    
+    if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
         initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
                         Eigen::Vector3d::Zero(), 
                         Eigen::Vector3d::Zero();
@@ -414,62 +456,41 @@ void Planner::controlLoop(const ros::TimerEvent&){
     }
     else{
         not_first = true;
-        double maxVel = traj.getMaxVelRate();
-        double factor = maxVel / _max_vel;
-        factor = _const_factor;
+        double factor = _const_factor;
         // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
         // double t = (a-start).toSec()/factor + .1;
-        double t = (a-start).toSec()/factor + .15;
+        double t = (a-start).toSec() + _lookahead;
         double tmpT = t;
         
-        int pieceIdx = traj.locatePieceIdx(tmpT);
-        Piece<5> currPiece = traj[pieceIdx];
-        double pieceDuration = currPiece.getDuration();
+        int trajInd = std::min((int) (t/.1), (int) sentTraj.points.size()-1);
+        // int trajInd = 0;
+        // for(; trajInd < sentTraj.points.size(); trajInd++){
 
-        Eigen::Vector3d iPos = traj.getPos(t);
+        //     if(sentTraj.points[trajInd].time_from_start > t)
+        //         break;
+
+        // }
+
+        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
+
         geometry_msgs::PointStamped poseMsg;
         poseMsg.header.frame_id = "map";
         poseMsg.header.stamp = ros::Time::now();
-        poseMsg.point.x = iPos[0];
-        poseMsg.point.y = iPos[1];
-        poseMsg.point.z = iPos[2];
+        poseMsg.point.x = p.positions[0];
+        poseMsg.point.y = p.positions[1];
+        poseMsg.point.z = p.positions[2];
         initPointPub.publish(poseMsg);
 
-        // initialPVA.col(0) = traj.getPos(t);
-        // initialPVA.col(1) = traj.getVel(t);
-        // initialPVA.col(2) = traj.getAcc(t);
+        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], p.positions[1], p.positions[2]);
+        initialPVA.col(1) = Eigen::Vector3d(p.velocities[0]*factor, 
+                                            p.velocities[1]*factor, 
+                                            p.velocities[2]*factor);
+        initialPVA.col(2) = Eigen::Vector3d(p.accelerations[0]*factor*factor,
+                                            p.accelerations[1]*factor*factor,
+                                            p.accelerations[2]*factor*factor);
 
-        // double pieceStartT = 0;
-        // for (int i = 0; i < pieceIdx; i++){
-        //     pieceStartT += traj[i].getDuration();
-        // }
-
-        // initialPVA.col(0) = currPiece.getPos(pieceStartT + pieceDuration);
-        // initialPVA.col(0) = currPiece.getPos(pieceDuration);
-        
-        // if (factor > 1){
-        //     initialPVA.col(1) = currPiece.getVel(pieceStartT + pieceDuration)/factor;
-        //     initialPVA.col(2) = currPiece.getAcc(pieceStartT + pieceDuration)/(factor*factor);
-        // } else{
-        //     initialPVA.col(1) = currPiece.getVel(pieceStartT + pieceDuration);
-        //     initialPVA.col(2) = currPiece.getAcc(pieceStartT + pieceDuration);
-        // }
-
-        // initialPVA.col(1) = currPiece.getVel(pieceDuration);
-        // initialPVA.col(2) = currPiece.getAcc(pieceDuration);
-
-        initialPVA.col(0) = traj.getPos(t);
-        initialPVA.col(1) = traj.getVel(t);
-        initialPVA.col(2) = traj.getAcc(t);
-
-        // std::cout << "piece: " << traj.locatePieceIdx(t) << "/" << traj.getPieceNum() << std::endl;
-        // std::cout << t << "/" << traj.getTotalDuration() << std::endl;
-        // std::cout << t << "\t" << factor << "\t";
-        // std::cout << pieceIdx << "/" << traj.getPieceNum() <<std::endl;
-        // std::cout << (a-start).toSec() << "\t" << (a-start).toSec()/factor << std::endl;
-        // std::cout << initialPVA.col(0) << std::endl;
-        // std::cout << "*******************************" << std::endl;
-
+        ROS_INFO("initialP is (%.2f, %.2f) [%.2f]", p.positions[0], p.positions[1], t);
+        ROS_INFO("initialV is (%.2f, %.2f) [%.2f]", p.velocities[0], p.velocities[1], t);
     }
 
 
@@ -526,49 +547,139 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     ROS_INFO("stitching trajectories");
 
-    // if (std::isinf(gcopter.optimize(traj, 1e-5))){
-    //     ROS_INFO("solver could not find trajectory");
-    //     return;
-    // }
+    if (sentTraj.points.size() != 0 || _is_goal_reset){
+        ROS_INFO("sentTraj points size is %lu", sentTraj.points.size());
 
-    if (traj.getPieceNum() != 0){
         double maxVel = traj.getMaxVelRate();
         double factor = maxVel / _max_vel;
         factor = _const_factor;
         // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
         // double t = (a-start).toSec()/factor + .1;
-        double t = (a-start).toSec()/factor + .15;
-        int pieceIdx = traj.locatePieceIdx(t);
+        double t1 = (ros::Time::now()-start).toSec();
+        double t2 = (a-start).toSec() + _lookahead;
+
         
-        std::vector<double> durs;
-        std::vector<typename Piece<5>::CoefficientMat> cMats;
-        for(int i = 0; i < pieceIdx; i++){
-            durs.push_back(traj[i].getDuration());
-            cMats.push_back(traj[i].getCoeffMat());
+        int startInd = std::min((int)(t1/.1), (int) sentTraj.points.size()-1)+1;
+        int trajInd = std::min((int) (t2/.1), (int) sentTraj.points.size()-1);
+
+        // ROS_INFO("startInd is %d and trajInd is %d", startInd, trajInd);
+        // ROS_INFO("startPos is (%.2f, %.2f)", sentTraj.points[startInd].positions[0],
+                                            //  sentTraj.points[startInd].positions[1]);
+
+        // ROS_INFO("Beginning of traj is (%.2f, %.2f)", sentTraj.points[0].positions[0],
+        //                                               sentTraj.points[0].positions[1]);
+
+        trajectory_msgs::JointTrajectory aTraj, bTraj;
+        
+        for(int i = startInd; i < trajInd; i++){
+            aTraj.points.push_back(sentTraj.points[i]);
+            aTraj.points.back().time_from_start = ros::Duration((i-startInd)*.1);
         }
 
-        // truncate piece where initial state is for append
-        durs.push_back(t);
-        cMats.push_back(traj[pieceIdx].getCoeffMat());
+        // ROS_INFO("first part of traj has %d points", trajInd - startInd);
+        // ROS_INFO("alleged first point is (%.2f, %.2f)", aTraj.points.back().positions[0],
+        //                                                 aTraj.points.back().positions[1]);
+        double startTime = (trajInd-startInd)*.1;
 
-        Trajectory<5> tmpTraj(durs, cMats);
-        tmpTraj.append(newTraj);
-        traj = tmpTraj;
-        if (!_is_teleop)
-            trajPubNoReset.publish(convertTrajToMsg(traj));
+        bTraj = convertTrajToMsg(newTraj);
+
+        for(int i = 0; i < bTraj.points.size(); i++){
+            aTraj.points.push_back(bTraj.points[i]);
+            aTraj.points.back().time_from_start = ros::Duration(startTime+i*.1);
+        }
+
+        // for(int i = 0; i < 20; i++){
+        //     if (i > aTraj.points.size())
+        //         break;
+
+        //     ROS_INFO("%d: sentV is (%.2f, %.2f)", i, aTraj.points[i].velocities[0],
+        //                                              aTraj.points[i].velocities[1]);
+
+        // }
+
+        // for(int i = 0; i < newTraj.getTotalDuration()/.1; i++){
+        //     trajectory_msgs::JointTrajectoryPoint p;
+        //     Eigen::Vector3d pos = newTraj.getPos(i*.1):
+        //     p.positions.push_back(pos[0]);
+        //     p.positions.push_back(pos[1]);
+        //     p.positions.push_back(pos[2]);
+
+        //     Eigen::Vector3d vel = newTraj.getVel(i*.1):
+        //     p.velocities.push_back(vel[0]);
+        //     p.velocities.push_back(vel[1]);
+        //     p.velocities.push_back(vel[2]);
+
+        //     Eigen::Vector3d acc = newTraj.getAcc(i*.1):
+        //     p.accelerations.push_back(acc[0]);
+        //     p.accelerations.push_back(acc[1]);
+        //     p.accelerations.push_back(acc[2]);
+
+        //     p.time_from_start = ros::Duration(startTime+ i*.1);
+        // }
+
+        // truncate piece where initial state is for append
+        // durs.push_back(t);
+        // cMats.push_back(traj[pieceIdx].getCoeffMat());
+
+        // Trajectory<5> tmpTraj(durs, cMats);
+        // tmpTraj.append(newTraj);
+        // traj = tmpTraj;
+
+        aTraj.header.frame_id = _frame_str;
+        aTraj.header.stamp = ros::Time::now();
+        // if (!_is_teleop)
+        //     trajPubNoReset.publish(convertTrajToMsg(traj));
+        // if (!_is_teleop)
+        //     trajPub.publish(convertTrajToMsg(traj));
+
+        sentTraj = aTraj;
+        _is_goal_reset = false;
+        start = ros::Time::now();
     }else{
         ROS_INFO("trajectory has been overwritten");
         traj = newTraj;
-        if (!_is_teleop)
-            trajPub.publish(convertTrajToMsg(traj));
+        sentTraj = convertTrajToMsg(newTraj);
+
         start = ros::Time::now();
     }
+
+    // vec_Vec2f padded = corridor::getPaddedScan(*costmap->getCostmap(), 0,0, _obs);
+    ros::Time one = ros::Time::now();
+    vec_Vec2f padded = corridor::getOccupied(*costmap->getCostmap());
+    double durr = (ros::Time::now() - one).toSec();
+    ROS_INFO("Getting occupied took %.6f seconds", durr);
+    
+    visualization_msgs::Marker pointMsg;
+    pointMsg.header.stamp = ros::Time::now();
+    pointMsg.header.frame_id = _frame_str;
+    pointMsg.type= visualization_msgs::Marker::POINTS;
+    pointMsg.action = visualization_msgs::Marker::ADD;
+    pointMsg.id = 123;
+    pointMsg.scale.x = .1;
+    pointMsg.scale.y = .1;
+    pointMsg.color.r = 0;
+    pointMsg.color.g = 0;
+    pointMsg.color.b = 1;
+    pointMsg.color.a = 1;
+    for(Vec2f p : padded){
+        geometry_msgs::Point pmsg;
+        pmsg.x = p[0];
+        pmsg.y = p[1];
+        pmsg.z = 0;
+        pointMsg.points.push_back(pmsg);
+    }
+
+    paddedLaserPub.publish(pointMsg);
+
+    // exit(0);
+    if(!_is_teleop)
+        trajPub.publish(sentTraj);
 
     // if (!_is_teleop)
     //     trajPub.publish(convertTrajToMsg(traj));
 
-    visualizeTraj(traj);
-    pubCurrPoly();
+    visualizeTraj(newTraj);
+    // pubCurrPoly();
     // exit(0);
 
     double totalT = (ros::Time::now() - a).toSec();
@@ -579,6 +690,32 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     // if (not_first)
         // exit(0);
+}
+
+template <int D>
+Trajectory<D> Planner::createStitchedTraj(const Trajectory<D>& oldTraj, const Trajectory<D>& newTraj, double stitchTime){
+    // factor = _const_factor;
+    // double t = (stitchTime-start).toSec()/factor + _lookahead;
+    // int pieceIdx = oldTraj.locatePieceIdx(t);
+
+    // double currT = (ros::Time::now()-start).toSec()/factor;
+    // int initPieceIdx = oldTraj.locatePieceIdx(currT);
+    
+    // std::vector<double> durs;
+    // std::vector<typename Piece<5>::CoefficientMat> cMats;
+    // for(int i = initPieceIdx; i < pieceIdx; i++){
+    //     durs.push_back(traj[i].getDuration());
+    //     cMats.push_back(traj[i].getCoeffMat());
+    // }
+
+    // // truncate piece where initial state is for append
+    // durs.push_back(t);
+    // cMats.push_back(traj[pieceIdx].getCoeffMat());
+
+    // Trajectory<5> tmpTraj(durs, cMats);
+    // tmpTraj.append(newTraj);
+    // traj = tmpTraj;
+    return oldTraj;
 }
 
 void Planner::goalLoop(const ros::TimerEvent&){
@@ -605,6 +742,11 @@ void Planner::pubCurrPoly(){
     geometry_msgs::PoseArray msg;
     Eigen::MatrixX4d currPoly = hPolys[0];
     for(int i = 0; i < currPoly.rows(); ++i){
+
+        // skip the Z-axis planes
+        if (fabs(currPoly.row(i)[0]) < 1e-2 && fabs(currPoly.row(i)[1]) < 1e-2)
+            continue;
+
         geometry_msgs::Pose p;
         p.orientation.x = currPoly.row(i)[0];
         p.orientation.y = currPoly.row(i)[1];
@@ -619,10 +761,41 @@ void Planner::pubCurrPoly(){
         // msg.planes.push_back(hypeMsg);
     }
 
+    // Eigen::Matrix3Xd positions = traj.getPositions();
+    // std::cout << "positions: " << std::endl;
+    // std::cout << positions << std::endl;
+    // Eigen::Vector3d pos = positions.col(0);
+    // ROS_INFO("wpt is (%.2f, %.2f, %2f)", pos[0], pos[1], pos[2]);
+
     currPolyPub.publish(msg);
 
-    for(int i = 1; ((double)i)*.1 < traj.getTotalDuration(); i++){
-        Eigen::Vector3d pos = traj.getPos(((double)i)*.1);
+    // for(int i = 1; ((double)i)*.1 < traj.getTotalDuration(); i++){
+    //     Eigen::Vector3d pos = traj.getPos(((double)i)*.1);
+    //     bool is_in = true;
+    //     for(int j = 0; j < currPoly.rows(); j++){
+    //         Eigen::Vector4d plane = currPoly.row(j);
+    //         double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
+    //         if (dot > 0){
+    //             is_in = false;
+    //             break;
+    //         }
+    //     }
+    //     if (!is_in){
+    //         Eigen::MatrixXd wpt = traj.getPos((i-1)*.1);
+    //         std::cout << "t is: " << (i-1)*.1 << "/" << traj.getTotalDuration() << std::endl;
+    //         std::cout << "wpt is " << wpt.transpose() << std::endl;
+    //         geometry_msgs::Point pMsg;
+    //         pMsg.x = wpt(0);
+    //         pMsg.y = wpt(1);
+    //         pMsg.z = wpt(2);
+    //         intGoalPub.publish(pMsg);
+    //         break;
+    //     }
+    // }
+    ROS_INFO("starting with sentTraj.points.size()=%lu", sentTraj.points.size());
+    for(int i = 1; i < sentTraj.points.size(); i++){
+        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i];
+        Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
         bool is_in = true;
         for(int j = 0; j < currPoly.rows(); j++){
             Eigen::Vector4d plane = currPoly.row(j);
@@ -633,17 +806,18 @@ void Planner::pubCurrPoly(){
             }
         }
         if (!is_in){
-            Eigen::MatrixXd wpt = traj.getPos((i-1)*.1);
-            std::cout << "t is: " << (i-1)*.1 << "/" << traj.getTotalDuration() << std::endl;
-            std::cout << "wpt is " << wpt.transpose() << std::endl;
+            std::cout << "t is: " << (i-5)*.1 << "/" << sentTraj.points.size()*.1 << std::endl;
+            trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i-5];
+            Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+            std::cout << "wpt is " << pos.transpose() << std::endl;
             geometry_msgs::Point pMsg;
-            pMsg.x = wpt(0);
-            pMsg.y = wpt(1);
-            pMsg.z = wpt(2);
+            pMsg.x = pos(0);
+            pMsg.y = pos(1);
+            pMsg.z = pos(2);
             intGoalPub.publish(pMsg);
             break;
         }
     }
 
-    exit(0);
+    // exit(0);
 }

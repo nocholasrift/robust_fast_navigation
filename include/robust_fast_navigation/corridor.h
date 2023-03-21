@@ -69,7 +69,8 @@ namespace corridor{
             }
             Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(valid_pc[0].data(), 3, valid_pc.size());
 
-            firi::firi(bd, pc, a, b, hp);
+            if (!firi::firi(bd, pc, a, b, hp))
+                std::cout << "firi failed" << std::endl;
 
             if (hpolys.size() != 0)
             {
@@ -77,7 +78,9 @@ namespace corridor{
                 if (3 <= ((hp * ah).array() > -eps).cast<int>().sum() +
                              ((hpolys.back() * ah).array() > -eps).cast<int>().sum())
                 {
-                    firi::firi(bd, pc, a, a, gap, 1);
+                    if (!firi::firi(bd, pc, a, a, gap, 1))
+                        std::cout << "firi failed again!" << std::endl;
+                        
                     hpolys.emplace_back(gap);
                 }
             }
@@ -220,6 +223,31 @@ namespace corridor{
             corridor::raycast(_map, sx,sy,ex,ey,x,y);
             paddedObs.push_back(Vec2f(x,y));
          
+        }
+
+        return paddedObs;
+    }
+
+    inline vec_Vec2f getOccupied(const costmap_2d::Costmap2D& _map){
+
+        vec_Vec2f paddedObs;
+        unsigned char* grid = _map.getCharMap();
+
+        double resolution = _map.getResolution();
+        int width = _map.getSizeInCellsX();
+        int height = _map.getSizeInCellsY();
+
+        for(int i = 0; i < width*height; i++){
+
+            if (grid[i] != 0){
+                unsigned int mx, my;
+                double x, y;
+                _map.indexToCells(i, mx, my);
+                _map.mapToWorld(mx, my, x, y);
+
+                paddedObs.push_back(Vec2f(x,y));
+            }
+
         }
 
         return paddedObs;
@@ -494,7 +522,11 @@ namespace corridor{
             path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
         }
 
-        for(Vec2f ob : getPaddedScan(_map, path[0][0], path[0][1], _obs)){
+        // for(Vec2f ob : getPaddedScan(_map, path[0][0], path[0][1], _obs)){
+        //     obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
+        // }
+
+        for(Vec2f ob : getOccupied(_map)){
             obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
         }
 
@@ -507,18 +539,18 @@ namespace corridor{
         // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
         // exit(0);
         convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
-            Eigen::Vector3d(x+w,y+h,.1),7.0, 3.0, polys);
+            Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
         // std::vector<Eigen::MatrixX4d> r = simplifyCorridor(polys);
         // return r;
         shortCut(polys);
         return polys;
 
-        for(int i = 0; i < path.size()-1; i++){
-            polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));
-        }
+        // for(int i = 0; i < path.size()-1; i++){
+        //     polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));
+        // }
         
-        std::vector<Eigen::MatrixX4d> ret = simplifyCorridor(polys);
-        return ret;
+        // std::vector<Eigen::MatrixX4d> ret = simplifyCorridor(polys);
+        // return ret;
         // shortCut(polys);
         // return polys;
     }

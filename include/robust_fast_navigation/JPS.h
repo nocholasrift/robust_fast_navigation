@@ -24,10 +24,10 @@ class Compare{
     }
 };
 
-class JPSPlanner{
+class JPSPlan{
 
 public:
-    JPSPlanner();
+    JPSPlan();
     
     void set_start(int x, int y);
     void set_destination(int x, int y);

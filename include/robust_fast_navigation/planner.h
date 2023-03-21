@@ -23,6 +23,10 @@
 #include <decomp_util/line_segment.h>
 #include <decomp_geometry/geometric_utils.h>
 
+
+// #include <jps_basis/data_utils.h>
+// #include <jps_planner/jps_planner/jps_planner.h>
+
 class Planner {
 public:
     Planner(ros::NodeHandle& nh);
@@ -40,7 +44,11 @@ private:
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
     void controlLoop(const ros::TimerEvent&);
     void goalLoop(const ros::TimerEvent&);
+    void projectIntoMap(const Eigen::Vector2d& goal);
     void pubCurrPoly();
+    
+    template <int D>
+    Trajectory<D> createStitchedTraj(const Trajectory<D>& oldTraj, const Trajectory<D>& newTraj, double stitchTime);
 
     template <int D>
     trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D> &traj);
@@ -49,13 +57,15 @@ private:
 
     vec_Vec2f _obs;
 
-    bool _is_init, _started_costmap, _is_goal_set, _is_teleop;
+    bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset;
 
     std::string _frame_str;
 
+    trajectory_msgs::JointTrajectory sentTraj;
+    ros::Time start;
     ros::Timer controlTimer, goalTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub;
-    ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, 
+    ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, intGoalPub,
     edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub;
 
     costmap_2d::Costmap2DROS* costmap;
@@ -66,7 +76,8 @@ private:
     Trajectory<5> traj;
 
     const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt, _const_factor;
+    double _max_vel, _dt, _const_factor, _lookahead;
+
 };
 
 #endif

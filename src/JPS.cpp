@@ -7,40 +7,40 @@
 
 #include <robust_fast_navigation/JPS.h>
 
-JPSPlanner::JPSPlanner(){
+JPSPlan::JPSPlan(){
 
 }
 
-void JPSPlanner::set_start(int x, int y){
+void JPSPlan::set_start(int x, int y){
     startX = x;
     startY = y;
 }
 
-void JPSPlanner::set_destination(int x, int y){
+void JPSPlan::set_destination(int x, int y){
     destX = x;
     destY = y;
 }
 
-double JPSPlanner::chebyshev_dist(int x, int y){
+double JPSPlan::chebyshev_dist(int x, int y){
     return std::max(abs(destX-x), abs(destY-y));
 }
 
 // im going to assume we never go over max_int number of cells in either direction...
-double JPSPlanner::manhattan_distance(int x, int y){
+double JPSPlan::manhattan_distance(int x, int y){
     return abs(destX-x) + abs(destY-y);
 }
 
-double JPSPlanner::octile_dist(int x, int y){
+double JPSPlan::octile_dist(int x, int y){
     int dx = abs(destX-x);
     int dy = abs(destY-y);
     return std::max(dx,dy)*(sqrt(2)) + std::min(dx,dy);
 }
 
-double JPSPlanner::euclidean_dist(int x, int y){
+double JPSPlan::euclidean_dist(int x, int y){
     return sqrt((x-destX)*(x-destX) + (y-destY)*(y-destY));
 }
 
-void JPSPlanner::add_to_queue(int x, int y, int dirx, int diry, double cost){
+void JPSPlan::add_to_queue(int x, int y, int dirx, int diry, double cost){
     
     static int count = 0;
 
@@ -61,7 +61,7 @@ void JPSPlanner::add_to_queue(int x, int y, int dirx, int diry, double cost){
 }
 
 // JPSNode_t explore_straight(const JPSNode_t& start){
-bool JPSPlanner::explore_straight(const JPSNode_t& start){
+bool JPSPlan::explore_straight(const JPSNode_t& start){
 
     int dirx = start.dirx;
     int diry = start.diry;
@@ -147,7 +147,7 @@ bool JPSPlanner::explore_straight(const JPSNode_t& start){
     }
 }
 
-bool JPSPlanner::explore_diagonal(const JPSNode_t& start){
+bool JPSPlan::explore_diagonal(const JPSNode_t& start){
 
     int dirx = start.dirx;
     int diry = start.diry;
@@ -245,7 +245,7 @@ bool JPSPlanner::explore_diagonal(const JPSNode_t& start){
 
 }
 
-void JPSPlanner::JPS(){
+void JPSPlan::JPS(){
 
     closedSet.clear();
     parents.clear();
@@ -294,7 +294,7 @@ void JPSPlanner::JPS(){
     }
 }
 
-std::vector<Eigen::Vector2d> JPSPlanner::getPath(bool simplify){
+std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
 
     std::vector<Eigen::Vector2d> ret;
 
@@ -340,7 +340,7 @@ std::vector<Eigen::Vector2d> JPSPlanner::getPath(bool simplify){
     return ret;
 }
 
-void JPSPlanner::set_map(unsigned char* map, int sizeX, int sizeY){
+void JPSPlan::set_map(unsigned char* map, int sizeX, int sizeY){
     this->_map = map;
     this->sizeX = sizeX;
     this->sizeY = sizeY;

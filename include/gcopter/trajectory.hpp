@@ -312,6 +312,7 @@ public:
             return RootFinder::countRoots(coeff, 0.0, 1.0) == 0;
         }
     }
+
 };
 
 template <int D>
