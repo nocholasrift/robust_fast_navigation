@@ -602,7 +602,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
     if(!_is_teleop)
         trajPub.publish(sentTraj);
 
-    visualizeTraj(newTraj);
+    visualizeTraj();
 
     // if (count++ > 3)
     //     exit(0);
