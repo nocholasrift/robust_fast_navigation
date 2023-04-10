@@ -332,9 +332,9 @@ namespace corridor{
         meshMarker.action = visualization_msgs::Marker::ADD;
         meshMarker.type = visualization_msgs::Marker::TRIANGLE_LIST;
         meshMarker.ns = "mesh";
-        meshMarker.color.r = 0.00;
-        meshMarker.color.g = 0.00;
-        meshMarker.color.b = 1.00;
+        meshMarker.color.r = 0.675;
+        meshMarker.color.g = 0.988;
+        meshMarker.color.b = .851;
         meshMarker.color.a = 0.15;
         meshMarker.scale.x = 1.0;
         meshMarker.scale.y = 1.0;
@@ -343,9 +343,9 @@ namespace corridor{
         edgeMarker = meshMarker;
         edgeMarker.type = visualization_msgs::Marker::LINE_LIST;
         edgeMarker.ns = "edge";
-        edgeMarker.color.r = 0.00;
-        edgeMarker.color.g = 1.00;
-        edgeMarker.color.b = 1.00;
+        edgeMarker.color.r = 0.365;
+        edgeMarker.color.g = 0.851;
+        edgeMarker.color.b = 0.757;
         edgeMarker.color.a = 1.00;
         edgeMarker.scale.x = 0.02;
 

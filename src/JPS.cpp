@@ -7,20 +7,53 @@
 
 #include <robust_fast_navigation/JPS.h>
 
+
+/**********************************************************************
+  Simple constructor which sets occupied_val field to default of 100.
+***********************************************************************/
 JPSPlan::JPSPlan(){
     occupied_val = 100;
 }
 
+/**********************************************************************
+  Function to set start of JPS. The (x,y) coordinate should be in grid
+  cell coordinates.
+
+  Inputs:
+    - x: starting x position 
+    - y: starting y position
+***********************************************************************/
 void JPSPlan::set_start(int x, int y){
     startX = x;
     startY = y;
 }
 
+/**********************************************************************
+  Function to set destination of JPS. The (x,y) coordinate should be in 
+  grid cell coordinates.
+
+  Inputs:
+    - x: destination x position 
+    - y: destination y position
+***********************************************************************/
 void JPSPlan::set_destination(int x, int y){
     destX = x;
     destY = y;
 }
 
+/**********************************************************************
+  Below are a collection of heuristics for the grid search. I've found
+  through experimentation that manhattan works best, but due to 
+  geometric setup of environment, it is not an admisisble heuristic and
+  thus doesn't give an optimal solution always.
+
+  Inputs:
+    - x: current x position
+    - y: current y position
+
+  Returns:
+    - Cost to destination coordinate
+***********************************************************************/
 double JPSPlan::chebyshev_dist(int x, int y){
     return std::max(abs(destX-x), abs(destY-y));
 }
@@ -40,10 +73,33 @@ double JPSPlan::euclidean_dist(int x, int y){
     return sqrt((x-destX)*(x-destX) + (y-destY)*(y-destY));
 }
 
+/**********************************************************************
+  Set the value which the JPS should use as occupied in the grid. For
+  traditional maps/costmaps this value is usually 100 or 253/254 (in 
+  ROS at least).
+
+  Inputs:
+    - x: value which indicates occupancy in the grid.
+***********************************************************************/
 void JPSPlan::set_occ_value(double x){
     occupied_val = x;
 }
 
+/**********************************************************************
+  This function pushes a node onto the priority queue, where cost is 
+  based on the cost-to-go heuristic function of the node in question.
+  To see the comparator for and instantiation of the priority queue, 
+  see JPS.h.
+
+  Inputs:
+    - x: x grid cell coordinate of the node 
+    - y: y grid cell coordinate of the node 
+    - dirx: which direction in x is the node searching in. This 
+      determines whether the node will use explore_straight or 
+      explore_diagonal when popped off queue.
+    - diry: which direction in y is the node searching in.
+    - cost: heuristic cost-to-go associated with the node.
+***********************************************************************/
 void JPSPlan::add_to_queue(int x, int y, int dirx, int diry, double cost){
     
     static int count = 0;
@@ -64,7 +120,19 @@ void JPSPlan::add_to_queue(int x, int y, int dirx, int diry, double cost){
     count += 1;
 }
 
-// JPSNode_t explore_straight(const JPSNode_t& start){
+/**********************************************************************
+  This function performs jumps in the grid in one of the 4 cardinal
+  directions starting at the given node. When this function is called,
+  the node is marked visited. Based on neighbor rules, new nodes will
+  be added to the open set (priority queue) as they are discovered.
+
+  Inputs:
+    - start: JPSNode_t that was popped off the queue.
+
+  Returns:
+    - True if a jump point has been found and added to queue.
+    - False otherwise
+***********************************************************************/
 bool JPSPlan::explore_straight(const JPSNode_t& start){
 
     int dirx = start.dirx;
@@ -151,6 +219,21 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
     }
 }
 
+/**********************************************************************
+  This function performs jumps in the grid in the diagonal direction.
+  starting at the given node. When this function is called, the node is
+  marked visited. Based on neighbor rules, new nodes will be added to 
+  the open set (priority queue) as they are discovered. Given JPS rules,
+  this function will also kick off an explore_straight in the dirx and 
+  diry directions at each node considered.
+
+  Inputs:
+    - start: JPSNode_t that was popped off the queue.
+
+  Returns:
+    - True if a jump point has been found and added to queue.
+    - False otherwise
+***********************************************************************/
 bool JPSPlan::explore_diagonal(const JPSNode_t& start){
 
     int dirx = start.dirx;
@@ -201,11 +284,6 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
             added = true;
         }
 
-        // if(added){
-        //     add_to_queue(n.x, n.y, n.dirx, 0, cost);
-        //     add_to_queue(n.x, n.y, 0, n.diry, cost);
-        // }
-
         JPSNode_t horN;
         horN.x = n.x;
         horN.y = n.y;
@@ -224,15 +302,14 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
 
         if (found_ver || found_hor){
             parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
-            //std::cout << "JP @ found vert/horiz to (" << n.x << "," << n.y << ")" << std::endl;
             // add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             // return true;
         }
 
-        if (added){
+        // if (added){
             // add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             // return true;
-        }
+        // }
 
         // if (added || found_ver || found_hor){
         //     parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
@@ -249,6 +326,11 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
 
 }
 
+/**********************************************************************
+  This function starts off the actual JPS and terminates when the goal
+  has been found or all grid cells have been examined. To start the
+  JPS, add the start coordinate to the queue in all possible directions.
+***********************************************************************/
 void JPSPlan::JPS(){
 
     closedSet.clear();
@@ -300,6 +382,18 @@ void JPSPlan::JPS(){
     }
 }
 
+/**********************************************************************
+  This function goes through the parents[] field and finds the path 
+  from destination to start, then reverses the path and stores the
+  jump points in a vector of Eigen::Vector2d. Finally, extraneous jump
+  points are removed from the path before returning.
+
+  Inputs:
+    - simplify: If true, the path will be simplified
+
+  Returns:
+    - vector of Eigen::Vector2d which denote the final JPS path
+***********************************************************************/
 std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
 
     std::vector<Eigen::Vector2d> ret;
@@ -340,22 +434,42 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
                 i++;
         
         }
-
+        
+        ret = simplifyPath(ret);
+        std::reverse(std::begin(ret), std::end(ret));
+        ret = simplifyPath(ret);
+        std::reverse(std::begin(ret), std::end(ret));
     }
-    
-    ret = simplifyPath(ret);
-    std::reverse(std::begin(ret), std::end(ret));
-    ret = simplifyPath(ret);
-    std::reverse(std::begin(ret), std::end(ret));
+
     return ret;
 }
 
+/**********************************************************************
+  This function sets the map that will be used in the grid search.
+  Traditionally these maps are stored as unsigned char* but in the case
+  that there are negative numbers, change to signed char* or int* array.
+
+  Inputs:
+    - map in which grid search will be performed on
+    - size of the map in both the x and y directions
+***********************************************************************/
 void JPSPlan::set_map(unsigned char* map, int sizeX, int sizeY){
     this->_map = map;
     this->sizeX = sizeX;
     this->sizeY = sizeY;
 }
 
+/**********************************************************************
+  This function removes "corners" that appear in the JPS around the 
+  borders of obstacles. This function was taken and modified slightly
+  from the folks at KumarRobotics: https://github.com/KumarRobotics/jps3d
+
+  Inputs:
+    - JPS path to be simplified
+
+  Returns:
+    - Simplified JPS path
+***********************************************************************/
 std::vector<Eigen::Vector2d> JPSPlan::simplifyPath(const std::vector<Eigen::Vector2d>& path){
     if (path.size() < 2)
         return path;
@@ -404,6 +518,20 @@ std::vector<Eigen::Vector2d> JPSPlan::simplifyPath(const std::vector<Eigen::Vect
     return optimized_path;
 }
 
+/**********************************************************************
+  This function checks if there is an occupied grid cell between two
+  points in the grid. Notice that the input points are NOT in grid cell
+  coordinate space, but actually the world frame.
+
+  Inputs:
+    - First point of line to be checked
+    - Second point of line to be check
+    - Maximum range for bresenham to check before terminating
+
+  Returns:
+    - True if an obstacle blocks the line connecting the two points
+    - False if line is obstacle free
+***********************************************************************/
 bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, double max_range){
     
     // raycast and bresenham
@@ -441,6 +569,16 @@ bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, do
 
 }
 
+/**********************************************************************
+  This function implements the Bresenham algorithm and was taken and
+  modified from the folks at Costmap2D. 
+
+  Inputs:
+
+  Returns:
+    - True if bresenham hits an obstacle along the path between two pts
+    - False if path is obstacle free
+***********************************************************************/
 bool JPSPlan::bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
     int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term){
     

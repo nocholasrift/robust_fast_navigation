@@ -6,6 +6,9 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Pose1
+        - /Odometry1
+        - /Odometry1/Shape1
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -102,7 +105,7 @@ Visualization Manager:
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 25; 255; 0
+      Color: 102; 86; 135
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
@@ -128,7 +131,7 @@ Visualization Manager:
       Marker Topic: /visualizer/edge
       Name: Marker
       Namespaces:
-        {}
+        edge: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -136,7 +139,7 @@ Visualization Manager:
       Marker Topic: /visualizer/mesh
       Name: Marker
       Namespaces:
-        {}
+        mesh: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -151,7 +154,7 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 92; 53; 102
-      Enabled: true
+      Enabled: false
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
@@ -170,11 +173,11 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /spline_path
       Unreliable: false
-      Value: true
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
-      Color: 237; 212; 0
+      Color: 25; 9; 51
       Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
@@ -195,16 +198,6 @@ Visualization Manager:
       Topic: /mpc_prediction
       Unreliable: false
       Value: true
-    - Alpha: 0.699999988079071
-      Class: rviz/Map
-      Color Scheme: map
-      Draw Behind: false
-      Enabled: true
-      Name: Map
-      Topic: /brsGrid
-      Unreliable: false
-      Use Timestamp: false
-      Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /gaps_viz
@@ -217,7 +210,7 @@ Visualization Manager:
       Axes Length: 1
       Axes Radius: 0.10000000149011612
       Class: rviz/Pose
-      Color: 255; 25; 0
+      Color: 107; 39; 55
       Enabled: true
       Head Length: 0.30000001192092896
       Head Radius: 0.10000000149011612
@@ -255,41 +248,13 @@ Visualization Manager:
       Queue Size: 100
       Value: true
     - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: Intensity
-      Decay Time: 0
-      Enabled: false
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: PointCloud2
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.009999999776482582
-      Style: Flat Squares
-      Topic: /mid/points
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: false
-    - Alpha: 1
       Class: rviz/PointStamped
-      Color: 204; 41; 204
+      Color: 176; 132; 204
       Enabled: true
-      History Length: 7
+      History Length: 1
       Name: PointStamped
       Queue Size: 10
-      Radius: 0.10000000149011612
+      Radius: 0.20000000298023224
       Topic: /traj_point
       Unreliable: false
       Value: true
@@ -317,8 +282,8 @@ Visualization Manager:
       Queue Size: 10
       Shape:
         Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
+        Axes Length: 0.800000011920929
+        Axes Radius: 0.20000000298023224
         Color: 255; 25; 0
         Head Length: 0.30000001192092896
         Head Radius: 0.10000000149011612
@@ -333,7 +298,7 @@ Visualization Manager:
       Marker Topic: /MINCO_path
       Name: Marker
       Namespaces:
-        {}
+        j: true
       Queue Size: 100
       Value: true
   Enabled: true
@@ -373,10 +338,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: -51.55230712890625
+      Scale: -60.46127700805664
       Target Frame: <Fixed Frame>
-      X: 2.7704124450683594
-      Y: 0.3641909658908844
+      X: 3.037478446960449
+      Y: 0.3519006371498108
     Saved: ~
 Window Geometry:
   Displays:
