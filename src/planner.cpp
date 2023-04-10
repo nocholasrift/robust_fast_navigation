@@ -404,11 +404,19 @@ void Planner::controlLoop(const ros::TimerEvent&){
     // local_costmap->resetLayers();
     // local_costmap->updateMap();
 
+    /*************************************
+    ************* UPDATE MAP *************
+    **************************************/
+
     global_costmap->resetLayers();
     global_costmap->updateMap();
 
     // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
     costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
+
+    /*************************************
+    ************ PERFORM  JPS ************
+    **************************************/
 
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
@@ -435,6 +443,10 @@ void Planner::controlLoop(const ros::TimerEvent&){
         jpsPath[i] = Eigen::Vector2d(x,y);
     }
 
+    /*************************************
+    ******** PUBLISH JPS TO RVIZ *********
+    **************************************/
+
     nav_msgs::Path jpsMsg;
     jpsMsg.header.stamp = ros::Time::now();
     jpsMsg.header.frame_id = _frame_str;
@@ -451,10 +463,18 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     jpsPub.publish(jpsMsg);
 
+    /*************************************
+    ********* GENERATE POLYTOPES *********
+    **************************************/
+
     hPolys = corridor::createCorridorJPS(jpsPath, *_map, _obs);
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
     ROS_INFO("%lu/%lu", jpsPath.size(), hPolys.size());
+
+    /*************************************
+    ******** GENERATE  TRAJECTORY ********
+    **************************************/
 
     // initial and final states
     Eigen::Matrix3d initialPVA;
@@ -550,6 +570,10 @@ void Planner::controlLoop(const ros::TimerEvent&){
         return;
     }
 
+    /*************************************
+    ******** STITCH  TRAJECTORIES ********
+    **************************************/
+
     // ROS_INFO("stitching trajectories");
     ROS_INFO("sentTraj size is %lu", sentTraj.points.size());
     if (sentTraj.points.size() != 0){// || _is_goal_reset){
@@ -564,7 +588,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
         ROS_INFO("[%.2f] t1 is %.2f\tt2 is %.2f", (ros::Time::now()-start).toSec(),t1, t2);
 
-        int startInd = std::min((int)(t1/_traj_dt), (int) sentTraj.points.size()-1);
+        int startInd = std::min((int)(t1/_traj_dt), (int) sentTraj.points.size()-1)+1;
         int trajInd = std::min((int) (t2/_traj_dt), (int) sentTraj.points.size()-1);
 
         ROS_INFO("[%.2f] startInd is %d\ttrajInd is %d", (ros::Time::now()-start).toSec(),startInd, trajInd);
@@ -604,13 +628,12 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     visualizeTraj();
 
-    // if (count++ > 3)
-    //     exit(0);
     // pubPolys();
     // exit(0);
 
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
+
     astarPath.clear();
 
 }
