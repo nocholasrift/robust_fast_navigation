@@ -8,7 +8,7 @@
 #include <robust_fast_navigation/JPS.h>
 
 JPSPlan::JPSPlan(){
-
+    occupied_val = 100;
 }
 
 void JPSPlan::set_start(int x, int y){
@@ -38,6 +38,10 @@ double JPSPlan::octile_dist(int x, int y){
 
 double JPSPlan::euclidean_dist(int x, int y){
     return sqrt((x-destX)*(x-destX) + (y-destY)*(y-destY));
+}
+
+void JPSPlan::set_occ_value(double x){
+    occupied_val = x;
 }
 
 void JPSPlan::add_to_queue(int x, int y, int dirx, int diry, double cost){
@@ -88,7 +92,7 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
             return false;
         }
 
-        if(_map[n.y*sizeX + n.x] != 0){
+        if(_map[n.y*sizeX + n.x] == occupied_val){
             return false;
         }
 
@@ -102,13 +106,13 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
         // only one of dirx or diry can be non-zero in this function call
         bool added = false;
         if (dirx != 0){
-            if (n.y != sizeY-1 &&_map[(n.y+1)*sizeX + n.x] != 0 && _map[(n.y+1)*sizeX + n.x+dirx] == 0){
+            if (n.y != sizeY-1 &&_map[(n.y+1)*sizeX + n.x] == occupied_val && _map[(n.y+1)*sizeX + n.x+dirx] != occupied_val){
                 //std::cout << "found forced at (" << n.x << "," << n.y << ")\t" << dirx << "\t1" << std::endl;
                 add_to_queue(n.x, n.y, dirx, 1, cost);
                 added = true;
             }
 
-            if (n.y != 0 && _map[(n.y-1)*sizeX + n.x] != 0 && _map[(n.y-1)*sizeX + n.x+dirx] == 0){
+            if (n.y != 0 && _map[(n.y-1)*sizeX + n.x] == occupied_val && _map[(n.y-1)*sizeX + n.x+dirx] != occupied_val){
                 //std::cout << "found forced at (" << n.x << "," << n.y << ")\t" << dirx << "\t-1" << std::endl;
                 add_to_queue(n.x, n.y, dirx, -1, cost);
                 added = true;
@@ -116,13 +120,13 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
         }
         
         else{
-            if (n.x != sizeX-1 && _map[n.y*sizeX + n.x+1] != 0 && _map[(n.y+diry)*sizeX + n.x+1] == 0){
+            if (n.x != sizeX-1 && _map[n.y*sizeX + n.x+1] == occupied_val && _map[(n.y+diry)*sizeX + n.x+1] != occupied_val){
                 //std::cout << "found forced at (" << n.x << "," << n.y << ")\t1\t" << diry << std::endl;
                 add_to_queue(n.x, n.y, 1, diry, cost);
                 added = true;
             }
 
-            if (n.x != 0 && _map[n.y*sizeX + n.x-1] != 0 && _map[(n.y+diry)*sizeX + n.x-1] == 0){
+            if (n.x != 0 && _map[n.y*sizeX + n.x-1] == occupied_val && _map[(n.y+diry)*sizeX + n.x-1] != occupied_val){
                 //std::cout << "found forced at (" << n.x << "," << n.y << ")\t-1\t" << diry << std::endl;
                 add_to_queue(n.x, n.y, -1, diry, cost);
                 added = true;
@@ -171,7 +175,7 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
             return false;
         }
 
-        if(_map[n.y*sizeX + n.x] != 0){
+        if(_map[n.y*sizeX + n.x] == occupied_val){
             return false;
         }
 
@@ -183,14 +187,14 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
         }
 
         bool added = false;
-        if ( _map[n.y*sizeX + curr.x] != 0 && _map[(n.y+diry)*sizeX + curr.x] == 0){
+        if ( _map[n.y*sizeX + curr.x] == occupied_val && _map[(n.y+diry)*sizeX + curr.x] != occupied_val){
             //std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
             parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
             add_to_queue(n.x, n.y, -n.dirx, n.diry, cost);
             added = true;
         }
 
-        if ( _map[curr.y*sizeX + n.x] != 0 && _map[curr.y*sizeX + n.x+dirx] == 0){
+        if ( _map[curr.y*sizeX + n.x] == occupied_val && _map[curr.y*sizeX + n.x+dirx] != occupied_val){
             //std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
             parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
             add_to_queue(n.x, n.y, n.dirx, -n.diry, cost);
@@ -252,10 +256,12 @@ void JPSPlan::JPS(){
 
     goalInd = -1;
 
-    if ( _map[startY*sizeX + startX] != 0 || _map[destY*sizeX + destX] != 0){
-        std::cerr << "start or destination in is occupied space" << std::endl;
+    if ( _map[startY*sizeX + startX] == occupied_val || _map[destY*sizeX + destX] == occupied_val){
+        std::cerr << "start or destination is in occupied space" << std::endl;
         return;
     }
+
+    std::cout << "start " << (int) _map[startY*sizeX + startX] << " and destination " << (int)_map[destY*sizeX + destX] << std::endl;
 
     // cardinal
     add_to_queue(startX, startY, 1, 0, 0);
@@ -337,6 +343,10 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
 
     }
     
+    ret = simplifyPath(ret);
+    std::reverse(std::begin(ret), std::end(ret));
+    ret = simplifyPath(ret);
+    std::reverse(std::begin(ret), std::end(ret));
     return ret;
 }
 
@@ -346,212 +356,118 @@ void JPSPlan::set_map(unsigned char* map, int sizeX, int sizeY){
     this->sizeY = sizeY;
 }
 
-// void set_straight_line(int start, int end){
-//     // //std::cout << start << " " << end << std::endl;
-//     int sy = start / sizeX;
-//     int sx = start - sy*sizeX;
+std::vector<Eigen::Vector2d> JPSPlan::simplifyPath(const std::vector<Eigen::Vector2d>& path){
+    if (path.size() < 2)
+        return path;
 
-//     int ey = end / sizeX;
-//     int ex = end - ey*sizeX;
+    // cut zigzag segment
+    std::vector<Eigen::Vector2d> optimized_path;
 
-//     // //std::cout << "(" << sx << ", " << sy << ")" << std::endl;
-//     // //std::cout << "(" << ex << ", " << ey << ")" << std::endl;
+    Eigen::Vector2d pose1 = path[0];
+    Eigen::Vector2d pose2 = path[1];
+    Eigen::Vector2d prev_pose = pose1;
 
-//     int dx = ex - sx > 0 ? 1 : -1;
-//     int dy = ey - sy > 0 ? 1 : -1;
+    optimized_path.push_back(pose1);
 
-//     if (ex - sx == 0)
-//         dx = 0;
-//     if (ey - sy == 0)
-//         dy = 0;
+    double cost1, cost2, cost3;
 
-//     int x = sx, y = sy;
-//     while (x != ex || y != ey){
-//         _map[y*sizeX + x] = 7;
-//         x += dx;
-//         y += dy;
-//         // //std::cout << "***********" << std::endl;
-//         // //std::cout << "(" << sx << ", " << sy << ")" << std::endl;
-//         // //std::cout << "(" << ex << ", " << ey << ")" << std::endl;
-//         // //std::cout << dx << " " << dy << std::endl;
-//         // //std::cout << x << " " << y << std::endl;
-//     }
+    if (!isBlocked(pose1, pose2))
+        cost1 = (pose1 - pose2).norm();
+    else
+        cost1 = std::numeric_limits<double>::infinity();
 
-// }
+    for (unsigned int i = 1; i < path.size() - 1; i++)
+    {
+        pose1 = path[i];
+        pose2 = path[i + 1];
+        if (!isBlocked(pose1, pose2))
+            cost2 = (pose1 - pose2).norm();
+        else
+            cost2 = std::numeric_limits<double>::infinity();
 
-// void setPath(int goalInd){
-//     int i = parents[goalInd];
-//     int j = 0;
-//     set_straight_line(goalInd, i);
+        if (!isBlocked(prev_pose, pose2))
+            cost3 = (prev_pose - pose2).norm();
+        else
+            cost3 = std::numeric_limits<double>::infinity();
 
-//     while(i != startY * sizeX + startX && j++ < 20){
-//         set_straight_line(i, parents[i]);
-//         i = parents[i];
-//     }
+        if (cost3 < cost1 + cost2)
+            cost1 = cost3;
+        else
+        {
+            optimized_path.push_back(path[i]);
+            cost1 = (pose1 - pose2).norm();
+            prev_pose = pose1;
+        }
+    }
 
-//     int startInd = startY*sizeX + startX;
-//     _map[startInd] = 6;
-//     _map[goalInd] = 8;
-// }
+    optimized_path.push_back(path.back());
+    return optimized_path;
+}
 
-// void getPath(int goalInd){
-
-//     int i = parents[goalInd];
-//     int j = 0;
-//     //std::cout << "path is: [" << "(" << goalInd-((int)(goalInd/sizeX))*sizeX << "," << goalInd/sizeX << ")" << "-->";
-//     while(i != startY * sizeX + startX && j++ < 20){
-//         //std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ") -->";
-//         // //std::cout << i << ", ";
-//         i = parents[i];
-//     }
-
-//     //std::cout << "(" << startX << ", " << startY << ")" <<std::endl;
-// }
-
-// void print_board(){
-//     for(int j = sizeY-1; j >= 0; j--){
-//         for(int i = 0; i < sizeX; i++){
-//             if (_map[j*sizeX + i] == 7)
-//                 //std::cout << "\033[1;31m"<< (int)_map[j*sizeX + i] << "\033[0m ";
-//             else if (_map[j*sizeX + i] != 0 && _map[j*sizeX + i] != 1)
-//                 //std::cout << "\033[1;32m"<< (int)_map[j*sizeX + i] << "\033[0m ";
-//             else if (_map[j*sizeX + i] == 1)
-//                 //std::cout << "\033[1;44m \033[0m ";
-//             else
-//                 //std::cout << (int)_map[j*sizeX + i] << " ";
-//         }
-//         //std::cout << "\n";
-//     }
-// }
-
-// void load_from_file(int& sX, int& sY, int& eX, int& eY){
-
-//     std::ifstream in;
-//     in.open("map.txt");
-
-//     int element;
-//     if (in.is_open()){
-//         int i = 0;
-//         while(in >> element){
-//             if (element == 6){
-//                 sY = i/sizeX;
-//                 sX = i-sY*sizeX;
-//                 _map[i++] = 0;
-//             } 
-//             else if(element == 8){
-//                 eY = i/sizeX;
-//                 eX = i-eY*sizeX;
-//                 _map[i++] = 0;
-//             } else
-//                 _map[i++] = element;
-//         }
-//     }
-
-//     in.close();
-// }
-
-// int main(){
-
-//     sizeX = 50;
-//     sizeY = 50;
-//     _map = new unsigned char[sizeX*sizeY];
-
-//     for(int i = 0; i < sizeX*sizeY; i++)
-//         _map[i] = 0;
-
-//     srand((unsigned) time(NULL));
-//     // for(int i = 0; i < sizeX; i++){
-//     //     for(int j = 0; j < sizeY; j++){
-//     //         if (i == 20 || i == 29 || j  20 && j < 30)
-//     //             _map[i] = 1;
-//     //     }
-//     // }
-
-//     // _map[25*sizeX+29] = 0;
-
-//     _map[23*sizeX + 23] = 1;
-//     _map[24*sizeX + 23] = 1;
-//     _map[25*sizeX + 23] = 1;
-//     _map[26*sizeX + 23] = 1;
-//     _map[27*sizeX + 23] = 1;
-
-//     _map[23*sizeX + 27] = 1;
-//     _map[24*sizeX + 27] = 1;
-//     _map[25*sizeX + 27] = 0;
-//     _map[26*sizeX + 27] = 1;
-//     _map[27*sizeX + 27] = 1;
-
-//     _map[23*sizeX + 23] = 1;
-//     _map[23*sizeX + 24] = 1;
-//     _map[23*sizeX + 25] = 1;
-//     _map[23*sizeX + 26] = 1;
-//     _map[23*sizeX + 27] = 1;
-
-//     _map[27*sizeX + 23] = 1;
-//     _map[27*sizeX + 24] = 1;
-//     _map[27*sizeX + 25] = 1;
-//     _map[27*sizeX + 26] = 1;
-//     _map[27*sizeX + 27] = 1;
-
-//     _map[30*sizeX + 6] = 1;
-//     _map[27*sizeX + 7] = 1;
-//     _map[24*sizeX + 8] = 1;
-//     _map[21*sizeX + 16] = 1;
-//     // _map[22*sizeX + 12] = 1;
-
-//     for(int i = 0; i < 30; i++){
-//         int x = rand() % sizeX;
-//         int y = rand() % sizeY;
-//         _map[y*sizeX + x] = 1;
-//     }
-
-//     int sX = rand() % sizeX;
-//     int sY = rand() % sizeY;
-
-//     while(_map[sY*sizeX + sX] != 0){
-//         sX = rand() % sizeX;
-//         sY = rand() % sizeY;
-//     }
-
-//     int eX = rand() % sizeX;
-//     int eY = rand() % sizeY;
-
-//     while(_map[eY*sizeX + eX] != 0){
-//         eX = rand() % sizeX;
-//         eY = rand() % sizeY;
-//     }
-
-//     // load_from_file(sX, sY, eX, eY);
-
-//     set_start(sX, sY);
-//     set_destination(eX,eY);
-
-//     // std::ofstream myfile("map.txt");
-//     // if(myfile.is_open()){
-//     //     for(int i = 0; i < sizeX*sizeY; i++){
-//     //         if (i == sY*sizeX + sX)
-//     //             myfile << "6 ";
-//     //         else if(i == eY*sizeX + eX)
-//     //             myfile << "8 ";
-//     //         else
-//     //             myfile << (int)_map[i] << " ";
-//     //     }
-//     //     myfile.close();
-//     // }
-
-//     int ind = JPS();
-//     // ind = -1;
-//     if (ind < 0){
-//         //std::cout << "goal not found!" << std::endl;
-//         print_board();
-//         return -1;
-//     }
-
-//     getPath(ind);
+bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, double max_range){
     
-//     setPath(ind);
-//     print_board();
+    // raycast and bresenham
+    unsigned int size_x = this->sizeX;
 
-//     return 0;
-// }
+    double sx = p1[0];
+    double sy = p1[1];
+    double ex = p2[0];
+    double ey = p2[1];
 
+    int dx = ex - sx;
+    int dy = ey - sy;
+
+    unsigned int abs_dx = abs(dx);
+    unsigned int abs_dy = abs(dy);
+    
+    int offset_dx = dx > 0 ? 1 : -1;
+    int offset_dy = (dy > 0 ? 1 : -1) * this->sizeX;
+
+    unsigned int offset = sy * size_x + sx;
+
+    double dist = hypot(dx, dy);
+    double scale = (dist == 0.0) ? 1.0 : std::min(1.0, max_range / dist);
+
+    unsigned int term; 
+    if (abs_dx >= abs_dy){
+        int error_y = abs_dx / 2;
+        return bresenham( abs_dx, abs_dy, error_y, offset_dx, offset_dy, 
+                offset, (unsigned int)(scale * abs_dx), term);
+    } else{
+        int error_x = abs_dy / 2;
+        return bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx,
+                offset, (unsigned int)(scale * abs_dy), term);
+    }
+
+}
+
+bool JPSPlan::bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
+    int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term){
+    
+    unsigned int end = std::min(max_range, abs_da);
+    unsigned int mx, my;
+
+    bool is_hit = false;
+    for (unsigned int i = 0; i < end; ++i) {
+        offset += offset_a;
+        error_b += abs_db;
+        
+        if (_map[offset] == occupied_val){
+            is_hit = true;
+            break;
+        }
+
+        if ((unsigned int)error_b >= abs_da) {
+            offset += offset_b;
+            error_b -= abs_da;
+        }
+
+        if (_map[offset] == occupied_val){
+            is_hit = true;
+            break;
+        }
+    }
+    
+    term = offset;
+    return is_hit;
+}

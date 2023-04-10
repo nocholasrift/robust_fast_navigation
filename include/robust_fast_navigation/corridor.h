@@ -8,9 +8,11 @@
 #include <visualization_msgs/Marker.h>
 
 #include <decomp_util/seed_decomp.h>
-#include <decomp_util/line_segment.h>
+#include <decomp_util/ellipsoid_decomp.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <decomp_geometry/geometric_utils.h>
+
+#include <robust_fast_navigation/utils.h>
 
 namespace corridor{
 
@@ -101,7 +103,6 @@ namespace corridor{
             
             _map.indexToCells(offset, mx, my);
             if (_map.getCost(mx, my) != costmap_2d::FREE_SPACE){
-                // ROS_INFO("oh shoot bresenham found something!");
                 break;
             }
 
@@ -112,7 +113,6 @@ namespace corridor{
 
             _map.indexToCells(offset, mx, my);
             if (_map.getCost(mx, my) != costmap_2d::FREE_SPACE){
-                // ROS_INFO("oh shoot bresenham found something!");
                 break;
             }
         }
@@ -134,7 +134,7 @@ namespace corridor{
         unsigned int abs_dy = abs(dy);
         
         int offset_dx = dx > 0 ? 1 : -1;
-        int offset_dy = (dy > 0 ? 1 : -1) * _map.getSizeInCellsX();
+        int offset_dy = (dy > 0 ? 1 : -1) * size_x;
 
         unsigned int offset = sy * size_x + sx;
 
@@ -239,7 +239,7 @@ namespace corridor{
 
         for(int i = 0; i < width*height; i++){
 
-            if (grid[i] != 0){
+            if (grid[i] == 253 || grid[i] == 254){
                 unsigned int mx, my;
                 double x, y;
                 _map.indexToCells(i, mx, my);
@@ -267,20 +267,30 @@ namespace corridor{
         return getHyperPlanes(poly, Eigen::Vector2d(x,y));
     }
 
-    inline Eigen::MatrixX4d genPolyJPS(const costmap_2d::Costmap2D& _map, 
-                                    const Eigen::Vector2d& p1, const Eigen::Vector2d& p2,
+    inline std::vector<Eigen::MatrixX4d> genPolyJPS(const costmap_2d::Costmap2D& _map, 
+                                    const std::vector<Eigen::Vector2d>& path,
                                     const vec_Vec2f& _obs){
-        LineSegment2D decomp(p1, p2);
-        // decomp.set_obs(_obs);
-        double x = ((p1+p2)/2)(0);
-        double y = ((p1+p2)/2)(1);
-        decomp.set_obs(getPaddedScan(_map, x, y, _obs));
-        decomp.set_local_bbox(Vec2f(2,2));
-        decomp.dilate(.1);
 
-        auto poly = decomp.get_polyhedron();
+        std::vector<Eigen::MatrixX4d> polys;
+        EllipsoidDecomp2D decomp;
+        // decomp.set_obs(_obs);
+        // double x = ((p1+p2)/2)(0);
+        // double y = ((p1+p2)/2)(1);
+        decomp.set_obs(_obs);
+        decomp.set_local_bbox(Vec2f(2,2));
+
+        vec_Vecf<2> p;
+        for(auto point : path)
+            p.push_back(point);
+        
+        decomp.dilate(p);
+
+        auto result = decomp.get_polyhedrons();
     
-        return getHyperPlanes(poly, Eigen::Vector2d(x,y));
+        for(int i = 0; i < result.size()-1; i++)
+            polys.push_back(getHyperPlanes(result[i], (path[i]+path[i+1])/2));
+
+        return polys;
     }
 
     inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
@@ -295,7 +305,7 @@ namespace corridor{
         {
             oldTris = mesh;
             Eigen::Matrix<double, 3, -1, Eigen::ColMajor> vPoly;
-            geo_utils::enumerateVs(hPolys[id], vPoly);
+            geo_utils::enumerateVs(expandPoly(hPolys[id],.05), vPoly);
 
             quickhull::QuickHull<double> tinyQH;
             const auto polyHull = tinyQH.getConvexHull(vPoly.data(), vPoly.cols(), false, true);

@@ -1,33 +1,45 @@
 #include <math.h>
+#include <cmath>
 #include <vector>
 #include <string>
+
+
 #include <tf/tf.h>
 #include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
-
+#include <std_msgs/ColorRGBA.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
+#include <tf2_ros/transform_listener.h>
+
 
 #include <robust_fast_navigation/JPS.h>
+#include <robust_fast_navigation/utils.h>
 #include <robust_fast_navigation/spline.h>
 #include <robust_fast_navigation/planner.h>
 #include <robust_fast_navigation/corridor.h>
-// #include <robust_fast_navigation/Polytope.h>
-// #include <robust_fast_navigation/Hyperplane.h>
+#include <robust_fast_navigation/tinycolormap.hpp>
 
+/**********************************************************************
+  Constructor to read in ROS params, setup subscribers & publishers,
+  ros timers, and initialize class fields.
+***********************************************************************/
 Planner::Planner(ros::NodeHandle& nh){
 
+    // ROS Params
     nh.param("robust_planner/max_velocity", _max_vel, 1.0);
     nh.param("robust_planner/planner_frequency", _dt, .1);
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/const_factor", _const_factor, 6.0);
     nh.param("robust_planner/lookahead", _lookahead, .15);
+    nh.param("robust_planner/traj_dt", _traj_dt, .1);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
+    // Publishers 
     trajVizPub = 
-        nh.advertise<nav_msgs::Path>("/MINCO_path", 0);
+        nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
     wptVizPub = 
         nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
+        
     trajPub = 
         nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
     trajPubNoReset = 
@@ -48,44 +60,65 @@ Planner::Planner(ros::NodeHandle& nh){
 
     jpsPub = 
         nh.advertise<nav_msgs::Path>("/jpsPath", 0);
+
     jpsPointsPub = 
         nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
 
     currPolyPub = 
-        // nh.advertise<robust_fast_navigation::Polytope>("/currPoly", 0);
         nh.advertise<geometry_msgs::PoseArray>("/currPoly", 0);
 
     intGoalPub = 
-        nh.advertise<geometry_msgs::Point>("/intermediate_goal", 0);
+        nh.advertise<geometry_msgs::PoseArray>("/intermediate_goal", 0);
 
+    // Subscribers
+    mapSub = nh.subscribe("/map", 1, &Planner::mapcb, this);
+    goalSub = nh.subscribe("/planner_goal", 1, &Planner::goalcb, this);
     laserSub = nh.subscribe("/front/scan", 1, &Planner::lasercb, this);
     odomSub = nh.subscribe("/odometry/filtered", 1, &Planner::odomcb, this);
-    pathSub = nh.subscribe("/global_planner/planner/plan", 1, &Planner::globalPathcb, this);
-    goalSub = nh.subscribe("/planner_goal", 1, &Planner::goalcb, this);
     clickedPointSub = nh.subscribe("/clicked_point", 1, &Planner::clickedPointcb, this);
+    pathSub = nh.subscribe("/global_planner/planner/plan", 1, &Planner::globalPathcb, this);
 
-    controlTimer = nh.createTimer(ros::Duration(_dt), &Planner::controlLoop, this);
+    // Timers
     goalTimer = nh.createTimer(ros::Duration(_dt/2.0), &Planner::goalLoop, this);
+    controlTimer = nh.createTimer(ros::Duration(_dt), &Planner::controlLoop, this);
 
     _is_init = false;
     _is_goal_set = false;
 
-    // map_util = std::make_shared<JPS::OccMapUtil>();
-
     ROS_INFO("Initialized planner!");
 }
 
+/**********************************************************************
+  Function to start main ros loop for planning node. Also starts the 
+  costmap processes.
+
+  TODOS: Add mutex's to class fields to allow for multi-threading
+***********************************************************************/
 void Planner::spin(){
     //tf::TransformListener tfListener(ros::Duration(10));
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
-    costmap = new costmap_2d::Costmap2DROS("costmap", tfBuffer);
-    costmap->start();
+
+    local_costmap = new costmap_2d::Costmap2DROS("local_costmap", tfBuffer);
+    local_costmap->start();
+
+    global_costmap = new costmap_2d::Costmap2DROS("global_costmap", tfBuffer);
+    global_costmap->start();
+
     ros::AsyncSpinner spinner(1);
     spinner.start();
+
     ros::waitForShutdown();
 }
 
+/**********************************************************************
+  Function callback which reads goal position from a clicked point in 
+  RVIZ. When called, this function will set the _is_goal_set field to 
+  true, which is required for planning to begin.
+
+  Inputs:
+    - PointStamped message
+***********************************************************************/
 void Planner::clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg){
     goal = Eigen::VectorXd(2);
     goal(0) = msg->point.x;
@@ -94,10 +127,27 @@ void Planner::clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg){
     _is_goal_reset = true;
 }
 
+
+/**********************************************************************
+  Function to project a point into the costmap for planning purposes.
+
+  Inputs:
+    - Goal coordinates
+
+  TODOS: Implement :)
+***********************************************************************/
 void Planner::projectIntoMap(const Eigen::Vector2d& goal){
     
 }
 
+/**********************************************************************
+  Function callback which reads a published goal pose. As with the 
+  clicked point callback function, this will set the _is_goal_set 
+  field to true, which is required for planning to begin.
+
+  Inputs:
+    - PoseStamped message
+***********************************************************************/
 void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
     goal = Eigen::VectorXd(2);
     goal(0) = msg->pose.position.x;
@@ -107,6 +157,31 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
     ROS_INFO("goal received!");
 }
 
+/**********************************************************************
+  Function callback which reads a published map. This map is different
+  from the local and global costmap, since it doesn't contain an 
+  inflate layer around the obstacles.
+
+  Inputs:
+    - OccupancyGrid message
+    
+  TODOS: Decide if this map is needed or not for planning...
+***********************************************************************/
+void Planner::mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg){
+    map = *msg;
+}
+
+/**********************************************************************
+  Function callback which reads in a published odometry message. To 
+  make arithmetic easier for planning purposes, it is converted in an 
+  (x,y,theta) format within an Eigen::Vector. The function also sets the
+  _is_init flag to true, which is necessary for planning to begin.
+
+  Inputs:
+    - Odometry message
+    
+  TODOS: is vel field really necessary?
+***********************************************************************/
 void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
 
     static ros::Time start;
@@ -124,7 +199,6 @@ void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
 	m.getRPY(roll, pitch, yaw);
 
 	_odom = Eigen::VectorXd(3);
-
 	_odom(0) = msg->pose.pose.position.x;
 	_odom(1) = msg->pose.pose.position.y; 
 	_odom(2) = yaw;
@@ -138,6 +212,16 @@ void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
     _is_init = true;
 }
 
+/**********************************************************************
+  Function callback which reads in a laserscan message. Only runs when
+  _is_init flag is set to true in order to save on computation. In 
+  order to be useable by polygon generation code, the scan is saved
+  into a vector of Eigen::Vector2d.
+
+  Inputs:
+    - LaserScan message
+    
+***********************************************************************/
 void Planner::lasercb(const sensor_msgs::LaserScan::ConstPtr& msg){
     
     if (!_is_init)
@@ -160,74 +244,94 @@ void Planner::lasercb(const sensor_msgs::LaserScan::ConstPtr& msg){
 
 }
 
+/**********************************************************************
+  Function callback which reads in a global path plan from an external
+  node. This was used before JPS was implemented and will probably be
+  removed in the near future if I don't find a need for it...
+
+  Inputs:
+    - Path message
+    
+  TODOS: Decide if this is a useful function now that JPS is 
+  implemented.
+***********************************************************************/
 void Planner::globalPathcb(const nav_msgs::Path::ConstPtr& msg){
     
     for (geometry_msgs::PoseStamped p : msg->poses)
         astarPath.push_back(Eigen::Vector2d(p.pose.position.x, p.pose.position.y));
 }
 
-template <int D>
-void Planner::visualizeTraj(const Trajectory<D> &traj){
+/**********************************************************************
+  Function which visualizes a given trajectory in RVIZ as a LINE_STRIP
+  visualization_msg. Currently uses an external header library called
+  tinycolormap to get the color associated with a normalized velocity.
 
-    if (traj.getPieceNum() > 0){
-        nav_msgs::Path msg;
-        msg.header.stamp = ros::Time::now();
+  Inputs:
+    - No inputs, works on the sentTraj field.
+
+  TODOS: 
+    - Break out hard coded velocity normalization constant into a 
+      ros param?
+    - Move this to utils.h?
+***********************************************************************/
+void Planner::visualizeTraj(){
+
+    if (sentTraj.points.size() > 0) {
+        visualization_msgs::Marker msg;
         msg.header.frame_id = _frame_str;
+        msg.header.stamp = ros::Time::now();
+        msg.ns = 'planTraj';
+        msg.id = 80;
+        msg.action = visualization_msgs::Marker::ADD;
+        msg.type = visualization_msgs::Marker::LINE_STRIP;
 
-        visualization_msgs::Marker wptMsg;
-        wptMsg.header.stamp = ros::Time::now();
-        wptMsg.header.frame_id = _frame_str;
-        wptMsg.id = 0;
-        wptMsg.type = visualization_msgs::Marker::SPHERE_LIST;
-        wptMsg.ns = "waypoints";
-        wptMsg.color.r = 1.00;
-        wptMsg.color.g = 0.00;
-        wptMsg.color.b = 0.00;
-        wptMsg.color.a = 1.00;
-        wptMsg.scale.x = 0.35;
-        wptMsg.scale.y = 0.35;
-        wptMsg.scale.z = 0.35;
-        wptMsg.pose.orientation.w = 1;
+        msg.scale.x = .1;
+        msg.pose.orientation.w = 1;
 
-        Eigen::MatrixXd wps = traj.getPositions();
-        for (int i = 0; i < wps.cols(); i++){
+        for(trajectory_msgs::JointTrajectoryPoint p : sentTraj.points){
+            Eigen::Vector3d vel_vec(p.velocities[0],
+                                    p.velocities[1],
+                                    p.velocities[2]);
+            double vel = vel_vec.norm();
+
+            tinycolormap::Color color = tinycolormap::GetColor(vel/1.0, tinycolormap::ColormapType::Plasma);
             
-            // geometry_msgs::Point point;
-            // point.x = wps.col(i)(0);
-            // point.y = wps.col(i)(1);
-            // point.z = wps.col(i)(2);
-            // wptMsg.points.push_back(point);
+            std_msgs::ColorRGBA color_msg;
+            color_msg.r = color.r();
+            color_msg.g = color.g();
+            color_msg.b = color.b();
+            color_msg.a = 1.0;
+            msg.colors.push_back(color_msg);
 
-            geometry_msgs::PoseStamped pose;
-            pose.header.stamp = ros::Time::now();
-            pose.header.frame_id = _frame_str;
-            pose.pose.position.x = wps.col(i)(0);
-            pose.pose.position.y = wps.col(i)(1);
-            pose.pose.position.z = wps.col(i)(2);
 
-            pose.pose.orientation.x = 0;
-            pose.pose.orientation.y = 0;
-            pose.pose.orientation.z = 0;
-            pose.pose.orientation.w = 1;
-            msg.poses.push_back(pose);
+            geometry_msgs::Point point_msg;
+            point_msg.x = p.positions[0];
+            point_msg.y = p.positions[1];
+            point_msg.z = p.positions[2];
+            msg.points.push_back(point_msg);
+
         }
 
-        for(int i = 0; i < traj.getPieceNum(); i++){
-            Eigen::Vector3d pos = traj[i].getPos(0);
-            geometry_msgs::Point point;
-            point.x = pos(0);
-            point.y = pos(1);
-            point.z = pos(2);
-            wptMsg.points.push_back(point);
-        }
-
-
-        wptVizPub.publish(wptMsg);
         trajVizPub.publish(msg);
+
     }
 
 }
 
+/**********************************************************************
+  Function which converts a Trajectory<D> into a JointTrajectory msg.
+  This discretizes the Trajectory<D> and packages it such that the
+  optimizes trajectory can be broadcast over ros to an external 
+  tracking node. A _const_factor is used to adjust the speeds, since
+  the solver doesn't do a very good job of respecting maximum velocity
+  constraints.
+
+  Inputs:
+    - Trajectory generated by optimizer
+
+  TODOS: 
+    - Clean up some unnecessary lines (especially concerning factor)
+***********************************************************************/
 template <int D>
 trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &traj){
 
@@ -238,41 +342,6 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
     double factor = traj.getMaxVelRate() / _max_vel;
     factor = _const_factor;
     double t = 0.;
-
-    // std::vector<double> _times, _x, _y;
-    // bool ran = false;
-    // while (t < traj.getTotalDuration()){
-    //     Eigen::Vector3d pos = traj.getPos(t);
-
-    //     if (!ran){
-    //         ROS_INFO("first point is (%.2f, %.2f)", pos(0), pos(1));
-    //         ran = true;
-    //     }
-
-    //     _times.push_back(t*factor);
-    //     _x.push_back(pos(0));
-    //     _y.push_back(pos(1));
-
-    //     t += .1/factor;
-
-    // }
-
-    // double velXA = traj.getVel(0)[0];
-    // double velYA = traj.getVel(0)[1];
-
-    // double velXB = traj.getVel(traj.getTotalDuration())[0]/_const_factor;
-    // double velYB = traj.getVel(traj.getTotalDuration())[1]/_const_factor;
-
-    // ROS_INFO("(not factored) boundary condition A is (%.2f, %.2f)", velXA*_const_factor, velYA*_const_factor);
-    // ROS_INFO("boundary condition A is (%.2f, %.2f)", velXA, velYA);
-    // ROS_INFO("boundary condition B is (%.2f, %.2f)", velXB, velYB);
-
-    // tk::spline sX = tk::spline(_times, _x, tk::spline::cspline,false,
-    //                             tk::spline::first_deriv, velXA,
-    //                             tk::spline::first_deriv, velXA);
-    // tk::spline sY = tk::spline(_times, _y, tk::spline::cspline,false,
-    //                             tk::spline::first_deriv, velYA,
-    //                             tk::spline::first_deriv, velYA);
 
     while (t < traj.getTotalDuration()){
         Eigen::Vector3d pos = traj.getPos(t);
@@ -296,47 +365,50 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
 
         msg.points.push_back(pt);
         
-        // ROS_INFO("%.2f/%.2f:\t(%.2f, %.2f)",t*factor,traj.getTotalDuration()*factor, pos(0), pos(1));
-
-        t += .1/factor;
+       
+        t += _traj_dt/factor;
     }
-
-    // t = 0;
-    // for(int i = 0; i < _times.size(); i++){
-    //     trajectory_msgs::JointTrajectoryPoint pt;
-    //     pt.positions.push_back(sX(t));
-    //     pt.positions.push_back(sY(t));
-
-    //     pt.velocities.push_back(sX.deriv(1,t));
-    //     pt.velocities.push_back(sY.deriv(1,t));
-
-    //     pt.accelerations.push_back(sX.deriv(2,t));
-    //     pt.accelerations.push_back(sY.deriv(2,t));
-
-    //     pt.time_from_start = ros::Duration(t);
-
-    //     msg.points.push_back(pt);
-    //     t += .1;
-    // }
 
     return msg;
 }
 
+/**********************************************************************
+  Function for the main control loop of the planner. This function is 
+  run on a timer controlled by the _dt ros parameter, and only runs
+  if both the _is_init and is_goal_set flags are set to true. The 
+  overall process is:
+    1.  Find JPS path from a point along previous trajectory to goal.
+    1a. If first iteration, plan starting from robot position instead.
+    2.  Expand intersecting polytopes around JPS path.
+    3.  Send polytope and other physical constraints into optimizer.
+    4.  Stitch resulting trajectory to previous one and publish to 
+        external trajectory tracker.
+
+  Inputs:
+    - Just a timer event which controls the rate at which the control
+      loop is run.
+
+  TODOS: 
+    - Decide whether to stay with global costmap or use local costmap
+***********************************************************************/
 void Planner::controlLoop(const ros::TimerEvent&){
 
+    static int count = 0;
 
-    // if (!_is_init || astarPath.size() == 0 || !_is_goal_set)
     if (!_is_init || !_is_goal_set)
         return;
 
     if ((_odom(1)-goal(1))*(_odom(1)-goal(1))+(_odom(0)-goal(0))*(_odom(0)-goal(0)) < .2)
         return;
 
+    // local_costmap->resetLayers();
+    // local_costmap->updateMap();
 
-    costmap_2d::Costmap2D* _map = costmap->getCostmap();
-    costmap->resetLayers();
-    costmap->updateMap();
+    global_costmap->resetLayers();
+    global_costmap->updateMap();
 
+    // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
+    costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
 
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
@@ -345,7 +417,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     jps.set_start(sX, sY);
     jps.set_destination(eX, eY);
-    // traj.clear();
+    jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
 
     jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY());
     jps.JPS();
@@ -363,20 +435,6 @@ void Planner::controlLoop(const ros::TimerEvent&){
         jpsPath[i] = Eigen::Vector2d(x,y);
     }
 
-    visualization_msgs::Marker jMsg;
-    jMsg.header.frame_id="map";
-    jMsg.header.stamp = ros::Time::now();
-    jMsg.type=visualization_msgs::Marker::SPHERE_LIST;
-    jMsg.action = visualization_msgs::Marker::ADD;
-    jMsg.id = 90210;
-    jMsg.scale.x = .1;
-    jMsg.scale.y = .1;
-    jMsg.scale.z = .1;
-    jMsg.color.r = 1;
-    jMsg.color.g = 1;
-    jMsg.color.b = 1;
-    jMsg.color.a = 1;
-
     nav_msgs::Path jpsMsg;
     jpsMsg.header.stamp = ros::Time::now();
     jpsMsg.header.frame_id = _frame_str;
@@ -389,17 +447,10 @@ void Planner::controlLoop(const ros::TimerEvent&){
         pMsg.pose.orientation.w = 1;
         jpsMsg.poses.push_back(pMsg);
         
-        geometry_msgs::Point pp;
-        pp.x = p(0);
-        pp.y = p(1);
-        pp.z = 0;
-        jMsg.points.push_back(pp);
     }
 
     jpsPub.publish(jpsMsg);
-    jpsPointsPub.publish(jMsg);
 
-    // hPolys = corridor::createCorridor(astarPath, *_map, _obs);
     hPolys = corridor::createCorridorJPS(jpsPath, *_map, _obs);
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
@@ -411,65 +462,20 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     ros::Time a = ros::Time::now();
 
-    // if (traj.getPieceNum() == 0 || _is_teleop){
-    //     initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
-    //                     Eigen::Vector3d::Zero(), 
-    //                     Eigen::Vector3d::Zero();
-
-    //     // std::cout << initialPVA << std::endl;
-    // }
-    // else{
-    //     not_first = true;
-    //     double maxVel = traj.getMaxVelRate();
-    //     double factor = maxVel / _max_vel;
-    //     factor = _const_factor;
-    //     // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
-    //     // double t = (a-start).toSec()/factor + .1;
-    //     double t = (a-start).toSec()/factor + _lookahead;
-    //     double tmpT = t;
-        
-    //     int pieceIdx = traj.locatePieceIdx(tmpT);
-    //     Piece<5> currPiece = traj[pieceIdx];
-    //     double pieceDuration = currPiece.getDuration();
-
-    //     Eigen::Vector3d iPos = traj.getPos(t);
-    //     geometry_msgs::PointStamped poseMsg;
-    //     poseMsg.header.frame_id = "map";
-    //     poseMsg.header.stamp = ros::Time::now();
-    //     poseMsg.point.x = iPos[0];
-    //     poseMsg.point.y = iPos[1];
-    //     poseMsg.point.z = iPos[2];
-    //     initPointPub.publish(poseMsg);
-
-    //     initialPVA.col(0) = traj.getPos(t);
-    //     initialPVA.col(1) = traj.getVel(t);
-    //     initialPVA.col(2) = traj.getAcc(t);
-
-    // }
-    
     if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
         initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
                         Eigen::Vector3d::Zero(), 
                         Eigen::Vector3d::Zero();
 
-        // std::cout << initialPVA << std::endl;
     }
     else{
         not_first = true;
         double factor = _const_factor;
-        // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
-        // double t = (a-start).toSec()/factor + .1;
+      
         double t = (a-start).toSec() + _lookahead;
         double tmpT = t;
         
-        int trajInd = std::min((int) (t/.1), (int) sentTraj.points.size()-1);
-        // int trajInd = 0;
-        // for(; trajInd < sentTraj.points.size(); trajInd++){
-
-        //     if(sentTraj.points[trajInd].time_from_start > t)
-        //         break;
-
-        // }
+        int trajInd = std::min((int) (t/_traj_dt), (int) sentTraj.points.size()-1);
 
         trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
 
@@ -481,7 +487,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
         poseMsg.point.z = p.positions[2];
         initPointPub.publish(poseMsg);
 
-        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], p.positions[1], p.positions[2]);
+        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], 
+                                            p.positions[1], 
+                                            p.positions[2]);
         initialPVA.col(1) = Eigen::Vector3d(p.velocities[0]*factor, 
                                             p.velocities[1]*factor, 
                                             p.velocities[2]*factor);
@@ -489,10 +497,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
                                             p.accelerations[1]*factor*factor,
                                             p.accelerations[2]*factor*factor);
 
-        ROS_INFO("initialP is (%.2f, %.2f) [%.2f]", p.positions[0], p.positions[1], t);
-        ROS_INFO("initialV is (%.2f, %.2f) [%.2f]", p.velocities[0], p.velocities[1], t);
     }
-
 
     Eigen::Matrix3d finalPVA;
     finalPVA << Eigen::Vector3d(goal(0),goal(1),0), 
@@ -502,9 +507,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
     Eigen::VectorXd magnitudeBounds(5);
     Eigen::VectorXd penaltyWeights(5);
     Eigen::VectorXd physicalParams(6);
-    magnitudeBounds(0) = 0.5;   //v_max
+    magnitudeBounds(0) = 1.8;   //v_max
     magnitudeBounds(1) = .8;   //omg_max
-    magnitudeBounds(2) = .3;    //theta_max
+    magnitudeBounds(2) = .8;    //theta_max
     magnitudeBounds(3) = -1;     //thrust_min
     magnitudeBounds(4) = .1;    //thrust_max
     penaltyWeights(0) = 1e4;    //pos_weight
@@ -512,7 +517,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
     penaltyWeights(2) = 1e4;    //omg_weight
     penaltyWeights(3) = 1e4;    //theta_weight
     penaltyWeights(4) = 1e5;    //thrust_weight
-    physicalParams(0) = .61;    // mass
+    physicalParams(0) = .6;    // mass
     physicalParams(1) = 9.81;   // gravity
     physicalParams(2) = 0;      // drag
     physicalParams(3) = 0;      // drag
@@ -545,92 +550,43 @@ void Planner::controlLoop(const ros::TimerEvent&){
         return;
     }
 
-    ROS_INFO("stitching trajectories");
-
-    if (sentTraj.points.size() != 0 || _is_goal_reset){
-        ROS_INFO("sentTraj points size is %lu", sentTraj.points.size());
+    // ROS_INFO("stitching trajectories");
+    ROS_INFO("sentTraj size is %lu", sentTraj.points.size());
+    if (sentTraj.points.size() != 0){// || _is_goal_reset){
+        // ROS_INFO("sentTraj points size is %lu", sentTraj.points.size());
 
         double maxVel = traj.getMaxVelRate();
         double factor = maxVel / _max_vel;
         factor = _const_factor;
-        // double t = factor < 1 ? (a-start).toSec() + .1 : (a-start).toSec()/factor + .1;
-        // double t = (a-start).toSec()/factor + .1;
-        double t1 = (ros::Time::now()-start).toSec();
-        double t2 = (a-start).toSec() + _lookahead;
 
-        
-        int startInd = std::min((int)(t1/.1), (int) sentTraj.points.size()-1)+1;
-        int trajInd = std::min((int) (t2/.1), (int) sentTraj.points.size()-1);
+        double t1 = std::round((ros::Time::now()-start).toSec()*10.)/10.;
+        double t2 = std::round(((a-start).toSec() + _lookahead)*10.)/10.;
 
-        // ROS_INFO("startInd is %d and trajInd is %d", startInd, trajInd);
-        // ROS_INFO("startPos is (%.2f, %.2f)", sentTraj.points[startInd].positions[0],
-                                            //  sentTraj.points[startInd].positions[1]);
+        ROS_INFO("[%.2f] t1 is %.2f\tt2 is %.2f", (ros::Time::now()-start).toSec(),t1, t2);
 
-        // ROS_INFO("Beginning of traj is (%.2f, %.2f)", sentTraj.points[0].positions[0],
-        //                                               sentTraj.points[0].positions[1]);
+        int startInd = std::min((int)(t1/_traj_dt), (int) sentTraj.points.size()-1);
+        int trajInd = std::min((int) (t2/_traj_dt), (int) sentTraj.points.size()-1);
+
+        ROS_INFO("[%.2f] startInd is %d\ttrajInd is %d", (ros::Time::now()-start).toSec(),startInd, trajInd);
 
         trajectory_msgs::JointTrajectory aTraj, bTraj;
         
         for(int i = startInd; i < trajInd; i++){
             aTraj.points.push_back(sentTraj.points[i]);
-            aTraj.points.back().time_from_start = ros::Duration((i-startInd)*.1);
+            aTraj.points.back().time_from_start = ros::Duration((i-startInd)*_traj_dt);
         }
 
-        // ROS_INFO("first part of traj has %d points", trajInd - startInd);
-        // ROS_INFO("alleged first point is (%.2f, %.2f)", aTraj.points.back().positions[0],
-        //                                                 aTraj.points.back().positions[1]);
-        double startTime = (trajInd-startInd)*.1;
+        double startTime = (trajInd-startInd)*_traj_dt;
 
         bTraj = convertTrajToMsg(newTraj);
 
         for(int i = 0; i < bTraj.points.size(); i++){
             aTraj.points.push_back(bTraj.points[i]);
-            aTraj.points.back().time_from_start = ros::Duration(startTime+i*.1);
+            aTraj.points.back().time_from_start = ros::Duration(startTime+i*_traj_dt);
         }
-
-        // for(int i = 0; i < 20; i++){
-        //     if (i > aTraj.points.size())
-        //         break;
-
-        //     ROS_INFO("%d: sentV is (%.2f, %.2f)", i, aTraj.points[i].velocities[0],
-        //                                              aTraj.points[i].velocities[1]);
-
-        // }
-
-        // for(int i = 0; i < newTraj.getTotalDuration()/.1; i++){
-        //     trajectory_msgs::JointTrajectoryPoint p;
-        //     Eigen::Vector3d pos = newTraj.getPos(i*.1):
-        //     p.positions.push_back(pos[0]);
-        //     p.positions.push_back(pos[1]);
-        //     p.positions.push_back(pos[2]);
-
-        //     Eigen::Vector3d vel = newTraj.getVel(i*.1):
-        //     p.velocities.push_back(vel[0]);
-        //     p.velocities.push_back(vel[1]);
-        //     p.velocities.push_back(vel[2]);
-
-        //     Eigen::Vector3d acc = newTraj.getAcc(i*.1):
-        //     p.accelerations.push_back(acc[0]);
-        //     p.accelerations.push_back(acc[1]);
-        //     p.accelerations.push_back(acc[2]);
-
-        //     p.time_from_start = ros::Duration(startTime+ i*.1);
-        // }
-
-        // truncate piece where initial state is for append
-        // durs.push_back(t);
-        // cMats.push_back(traj[pieceIdx].getCoeffMat());
-
-        // Trajectory<5> tmpTraj(durs, cMats);
-        // tmpTraj.append(newTraj);
-        // traj = tmpTraj;
 
         aTraj.header.frame_id = _frame_str;
         aTraj.header.stamp = ros::Time::now();
-        // if (!_is_teleop)
-        //     trajPubNoReset.publish(convertTrajToMsg(traj));
-        // if (!_is_teleop)
-        //     trajPub.publish(convertTrajToMsg(traj));
 
         sentTraj = aTraj;
         _is_goal_reset = false;
@@ -643,81 +599,32 @@ void Planner::controlLoop(const ros::TimerEvent&){
         start = ros::Time::now();
     }
 
-    // vec_Vec2f padded = corridor::getPaddedScan(*costmap->getCostmap(), 0,0, _obs);
-    ros::Time one = ros::Time::now();
-    vec_Vec2f padded = corridor::getOccupied(*costmap->getCostmap());
-    double durr = (ros::Time::now() - one).toSec();
-    ROS_INFO("Getting occupied took %.6f seconds", durr);
-    
-    visualization_msgs::Marker pointMsg;
-    pointMsg.header.stamp = ros::Time::now();
-    pointMsg.header.frame_id = _frame_str;
-    pointMsg.type= visualization_msgs::Marker::POINTS;
-    pointMsg.action = visualization_msgs::Marker::ADD;
-    pointMsg.id = 123;
-    pointMsg.scale.x = .1;
-    pointMsg.scale.y = .1;
-    pointMsg.color.r = 0;
-    pointMsg.color.g = 0;
-    pointMsg.color.b = 1;
-    pointMsg.color.a = 1;
-    for(Vec2f p : padded){
-        geometry_msgs::Point pmsg;
-        pmsg.x = p[0];
-        pmsg.y = p[1];
-        pmsg.z = 0;
-        pointMsg.points.push_back(pmsg);
-    }
-
-    paddedLaserPub.publish(pointMsg);
-
-    // exit(0);
     if(!_is_teleop)
         trajPub.publish(sentTraj);
 
-    // if (!_is_teleop)
-    //     trajPub.publish(convertTrajToMsg(traj));
-
     visualizeTraj(newTraj);
-    // pubCurrPoly();
+
+    // if (count++ > 3)
+    //     exit(0);
+    // pubPolys();
     // exit(0);
 
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
     astarPath.clear();
-    // _is_goal_set = false;
 
-
-    // if (not_first)
-        // exit(0);
 }
 
-template <int D>
-Trajectory<D> Planner::createStitchedTraj(const Trajectory<D>& oldTraj, const Trajectory<D>& newTraj, double stitchTime){
-    // factor = _const_factor;
-    // double t = (stitchTime-start).toSec()/factor + _lookahead;
-    // int pieceIdx = oldTraj.locatePieceIdx(t);
+/**********************************************************************
+  Function to publish current goal on a timer. 
 
-    // double currT = (ros::Time::now()-start).toSec()/factor;
-    // int initPieceIdx = oldTraj.locatePieceIdx(currT);
-    
-    // std::vector<double> durs;
-    // std::vector<typename Piece<5>::CoefficientMat> cMats;
-    // for(int i = initPieceIdx; i < pieceIdx; i++){
-    //     durs.push_back(traj[i].getDuration());
-    //     cMats.push_back(traj[i].getCoeffMat());
-    // }
+  Inputs:
+    - Just a timer event which controls the rate at which the function
+      is run.
 
-    // // truncate piece where initial state is for append
-    // durs.push_back(t);
-    // cMats.push_back(traj[pieceIdx].getCoeffMat());
-
-    // Trajectory<5> tmpTraj(durs, cMats);
-    // tmpTraj.append(newTraj);
-    // traj = tmpTraj;
-    return oldTraj;
-}
-
+  TODOS: 
+    - Decide if this function is necesary or not.
+***********************************************************************/
 void Planner::goalLoop(const ros::TimerEvent&){
 
     if (!_is_goal_set)
@@ -727,8 +634,6 @@ void Planner::goalLoop(const ros::TimerEvent&){
     msg.header.stamp = ros::Time::now();
     msg.header.frame_id = _frame_str;
 
-    // msg.pose.position.x = 5.2;
-    // msg.pose.position.y = -.3;
     msg.pose.position.x = goal(0);
     msg.pose.position.y = goal(1);
     msg.pose.position.z = 0;
@@ -737,87 +642,102 @@ void Planner::goalLoop(const ros::TimerEvent&){
     goalPub.publish(msg);
 }
 
-void Planner::pubCurrPoly(){
+/**********************************************************************
+  Function to publish the current polytope corridor as a PoseArray
+  message. This function can be ignored as it's primary use is for an
+  external backward reachable set project.
+
+  Inputs:
+    - None
+
+  TODOS: 
+    - Come up with a better way to generate intermediate goals
+***********************************************************************/
+void Planner::pubPolys(){
 
     geometry_msgs::PoseArray msg;
-    Eigen::MatrixX4d currPoly = hPolys[0];
-    for(int i = 0; i < currPoly.rows(); ++i){
+    geometry_msgs::PoseArray wptMsgs;
+    wptMsgs.header.frame_id = _frame_str;
+    wptMsgs.header.stamp = ros::Time::now();
 
-        // skip the Z-axis planes
-        if (fabs(currPoly.row(i)[0]) < 1e-2 && fabs(currPoly.row(i)[1]) < 1e-2)
-            continue;
+    geometry_msgs::Pose pMsg;
+    pMsg.position.x = _odom(0);
+    pMsg.position.y = _odom(1);
+    pMsg.position.z = 0;
+    pMsg.orientation.w = 1;
+    wptMsgs.poses.push_back(pMsg);
 
-        geometry_msgs::Pose p;
-        p.orientation.x = currPoly.row(i)[0];
-        p.orientation.y = currPoly.row(i)[1];
-        p.orientation.z = currPoly.row(i)[2];
-        p.orientation.w = currPoly.row(i)[3];
-        msg.poses.push_back(p);
+    int lastStopped = 1;
 
-        // hypeMsg.a = currPoly.row(i)[0];
-        // hypeMsg.b = currPoly.row(i)[1];
-        // hypeMsg.c = currPoly.row(i)[2];
-        // hypeMsg.d = currPoly.row(i)[3];
-        // msg.planes.push_back(hypeMsg);
-    }
+    for(int p = 0; p < hPolys.size(); p++){
 
-    // Eigen::Matrix3Xd positions = traj.getPositions();
-    // std::cout << "positions: " << std::endl;
-    // std::cout << positions << std::endl;
-    // Eigen::Vector3d pos = positions.col(0);
-    // ROS_INFO("wpt is (%.2f, %.2f, %2f)", pos[0], pos[1], pos[2]);
+        Eigen::MatrixX4d currPoly = hPolys[p];
 
-    currPolyPub.publish(msg);
+        for(int i = 0; i < currPoly.rows(); ++i){
+            // skip the Z-axis planes
+            if (fabs(currPoly.row(i)[0]) < 1e-2 && fabs(currPoly.row(i)[1]) < 1e-2)
+                continue;
 
-    // for(int i = 1; ((double)i)*.1 < traj.getTotalDuration(); i++){
-    //     Eigen::Vector3d pos = traj.getPos(((double)i)*.1);
-    //     bool is_in = true;
-    //     for(int j = 0; j < currPoly.rows(); j++){
-    //         Eigen::Vector4d plane = currPoly.row(j);
-    //         double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
-    //         if (dot > 0){
-    //             is_in = false;
-    //             break;
-    //         }
-    //     }
-    //     if (!is_in){
-    //         Eigen::MatrixXd wpt = traj.getPos((i-1)*.1);
-    //         std::cout << "t is: " << (i-1)*.1 << "/" << traj.getTotalDuration() << std::endl;
-    //         std::cout << "wpt is " << wpt.transpose() << std::endl;
-    //         geometry_msgs::Point pMsg;
-    //         pMsg.x = wpt(0);
-    //         pMsg.y = wpt(1);
-    //         pMsg.z = wpt(2);
-    //         intGoalPub.publish(pMsg);
-    //         break;
-    //     }
-    // }
-    ROS_INFO("starting with sentTraj.points.size()=%lu", sentTraj.points.size());
-    for(int i = 1; i < sentTraj.points.size(); i++){
-        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i];
-        Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
-        bool is_in = true;
-        for(int j = 0; j < currPoly.rows(); j++){
-            Eigen::Vector4d plane = currPoly.row(j);
-            double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
-            if (dot > 0){
-                is_in = false;
+            Eigen::MatrixX4d expandedPoly = expandPoly(currPoly, .05);
+            geometry_msgs::Pose p;
+            p.orientation.x = expandedPoly.row(i)[0];
+            p.orientation.y = expandedPoly.row(i)[1];
+            p.orientation.z = expandedPoly.row(i)[2];
+            p.orientation.w = expandedPoly.row(i)[3];
+            msg.poses.push_back(p);
+        }
+        ROS_INFO("**********");
+
+        // all zeroes used as a separator between polytopes
+        geometry_msgs::Pose separator;
+        separator.orientation.x = 0;
+        separator.orientation.y = 0;
+        separator.orientation.z = 0;
+        separator.orientation.w = 0;
+        msg.poses.push_back(separator);
+
+        for(int i = lastStopped; i < sentTraj.points.size(); i++){
+            trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i];
+            Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+            bool is_in = true;
+            for(int j = 0; j < currPoly.rows(); j++){
+                Eigen::Vector4d plane = currPoly.row(j);
+                double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
+                if (dot > 0){
+                    is_in = false;
+                    lastStopped = i;
+                    break;
+                }
+            }
+
+            if (!is_in){
+                ROS_INFO("i is %d", i);
+                trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[std::max(i-1,0)];
+                Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+                geometry_msgs::Pose pM;
+                pM.position.x = pos(0);
+                pM.position.y = pos(1);
+                pM.position.z = pos(2);
+                pM.orientation.w = 1;
+                wptMsgs.poses.push_back(pM);
                 break;
             }
+
         }
-        if (!is_in){
-            std::cout << "t is: " << (i-5)*.1 << "/" << sentTraj.points.size()*.1 << std::endl;
-            trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i-5];
-            Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
-            std::cout << "wpt is " << pos.transpose() << std::endl;
-            geometry_msgs::Point pMsg;
-            pMsg.x = pos(0);
-            pMsg.y = pos(1);
-            pMsg.z = pos(2);
-            intGoalPub.publish(pMsg);
-            break;
-        }
+
     }
 
-    // exit(0);
+    ROS_INFO("last point!");
+    trajectory_msgs::JointTrajectoryPoint p = sentTraj.points.back();
+    Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+    geometry_msgs::Pose pM;
+    pM.position.x = pos(0);
+    pM.position.y = pos(1);
+    pM.position.z = pos(2);
+    pM.orientation.w = 1;
+    wptMsgs.poses.push_back(pM);
+
+    intGoalPub.publish(wptMsgs);
+    currPolyPub.publish(msg);
+
 }

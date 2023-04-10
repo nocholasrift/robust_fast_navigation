@@ -132,7 +132,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${DECOMP_UTIL_INCLUDE_DIRS}
-  # ${JPS3D_INCLUDE_DIRS}
+  ${JPS3D_INCLUDE_DIRS}
 )
 # link_directories(jps3d/build)
 

@@ -12,6 +12,7 @@
 #include <sensor_msgs/LaserScan.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/PolygonStamped.h>
@@ -20,19 +21,15 @@
 #include <costmap_2d/costmap_2d_ros.h>
 
 #include <decomp_util/seed_decomp.h>
-#include <decomp_util/line_segment.h>
+#include <decomp_util/ellipsoid_decomp.h>
 #include <decomp_geometry/geometric_utils.h>
 
-
-// #include <jps_basis/data_utils.h>
-// #include <jps_planner/jps_planner/jps_planner.h>
 
 class Planner {
 public:
     Planner(ros::NodeHandle& nh);
 
-    template <int D>
-    void visualizeTraj(const Trajectory<D> &traj);
+    void visualizeTraj();
     void spin();
 
 private:
@@ -42,14 +39,12 @@ private:
     void odomcb(const nav_msgs::Odometry::ConstPtr& msg);
     void lasercb(const sensor_msgs::LaserScan::ConstPtr& msg);
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
+    void mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg);
     void controlLoop(const ros::TimerEvent&);
     void goalLoop(const ros::TimerEvent&);
     void projectIntoMap(const Eigen::Vector2d& goal);
-    void pubCurrPoly();
+    void pubPolys();
     
-    template <int D>
-    Trajectory<D> createStitchedTraj(const Trajectory<D>& oldTraj, const Trajectory<D>& newTraj, double stitchTime);
-
     template <int D>
     trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D> &traj);
 
@@ -62,13 +57,14 @@ private:
     std::string _frame_str;
 
     trajectory_msgs::JointTrajectory sentTraj;
+    
     ros::Time start;
     ros::Timer controlTimer, goalTimer;
-    ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub;
+    ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, intGoalPub,
     edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub;
 
-    costmap_2d::Costmap2DROS* costmap;
+    costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
     std::vector<Eigen::Vector2d> astarPath;
 
     std::vector<Eigen::MatrixX4d> hPolys;
@@ -76,7 +72,11 @@ private:
     Trajectory<5> traj;
 
     const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt, _const_factor, _lookahead;
+    double _max_vel, _dt, _const_factor, _lookahead, _traj_dt;
+
+    nav_msgs::OccupancyGrid map;
+    
+    EllipsoidDecomp2D ellip_decomp_util_;
 
 };
 

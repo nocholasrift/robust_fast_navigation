@@ -4,9 +4,8 @@
     <arg name="goal_y" default="13.0" />
     <!-- <arg name="odomTopic" default="/odom" /> -->
 
-    <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="robust_planner/costmap/" />
-    <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="minco_test/costmap/" /> -->
-    <!-- <rosparam file="$(find robust_fast_navigation)/params/costmap_common_params.yaml" command="load" ns="global_planner/costmap/" /> -->
+    <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
+    <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
 
     <include file="$(find jackal_navigation)/launch/include/gmapping.launch" />
 
@@ -26,9 +25,6 @@
     <node name="publish_pf_pose" pkg="robust_fast_navigation" type="publish_pf_pose" output="screen" />
     
     <!-- MPC Tracking -->
-    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch">
-        <!-- <arg name="odomTopic" value="$(arg odomTopic)" /> -->
-        <!-- <remap from="/odometry/filtered" to="$(arg odomTopic)" /> -->
-    </include>
+    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch" />
 
 </launch>

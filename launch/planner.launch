@@ -1,16 +1,19 @@
 <launch>
 
-    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen">
+    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen"> -->
+    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" >
         <param name="max_velocity" value="1" />
         <param name="planner_frequency" value=".5" />
         <param name="lookahead" value=".3" />
         <param name="const_factor" value="6" />
         <param name="teleop" value="false" />
         <param name="frame" value="map" />
+        <param name="traj_dt" value=".05" />
 
-        <remap from="/planner_goal" to="/move_base_simple/goal" />
-        <!-- <remap from="/planner_goal" to="/gapGoal" /> -->
+        <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
+        <remap from="/planner_goal" to="/gap_goal" />
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 
+    <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
 </launch>
