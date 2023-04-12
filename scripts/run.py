@@ -95,8 +95,6 @@ if __name__ == "__main__":
         time.sleep(1)
 
 
-
-
     ##########################################################################################
     ## 1. Launch your navigation stack
     ## (Customize this block to add your own navigation stack)
@@ -122,7 +120,7 @@ if __name__ == "__main__":
     
     from geometry_msgs.msg import PoseStamped, Quaternion
 
-    goal_pub = rospy.Publisher("/gap_goal", PoseStamped, queue_size=1, latch=True)
+    goal_pub = rospy.Publisher("/final_goal", PoseStamped, queue_size=1, latch=True)
     mb_goal = PoseStamped()
     mb_goal.header.frame_id = 'map'
     mb_goal.header.stamp = rospy.Time.now()
@@ -134,7 +132,6 @@ if __name__ == "__main__":
     goal_pub.publish(mb_goal)
 
 
-
     ##########################################################################################
     ## 2. Start navigation
     ##########################################################################################
@@ -143,9 +140,15 @@ if __name__ == "__main__":
     pos = gazebo_sim.get_model_state().pose.position
     curr_coor = (pos.x, pos.y)
 
-    
+    prog_crash = False
+    start_time = curr_time
     # check whether the robot started to move
     while compute_distance(init_coor, curr_coor) < 0.1 or planner_process.poll() is not None:
+
+        if curr_time - start_time > 60:
+            prog_crash = True
+            break
+
         curr_time = rospy.get_time()
         pos = gazebo_sim.get_model_state().pose.position
         curr_coor = (pos.x, pos.y)
@@ -156,11 +159,10 @@ if __name__ == "__main__":
     start_time_cpu = time.time()
     collided = False
 
-    if planner_process.poll() is not None:
+    if planner_process.poll() is not None or prog_crash:
         collided = True
     
-    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < 70 and curr_coor[1] < 10:
-        print(curr_coor, curr_coor[1] < 10)
+    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < 50 and curr_coor[1] < 10:
         curr_time = rospy.get_time()
         pos = gazebo_sim.get_model_state().pose.position
         curr_coor = (pos.x, pos.y)
@@ -178,7 +180,7 @@ if __name__ == "__main__":
     success = False
     if collided:
         status = "collided"
-    elif curr_time - start_time >= 70:
+    elif curr_time - start_time >= 50:
         status = "timeout"
     else:
         status = "succeeded"

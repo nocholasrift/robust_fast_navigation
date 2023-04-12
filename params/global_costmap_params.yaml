@@ -30,7 +30,7 @@ plugins:
 - {name: inflater_layer, type: "costmap_2d::InflationLayer"}
 
 inflater_layer:
- inflation_radius: 0.35
+ inflation_radius: 0.39
  cost_scaling_factor: 0.3
 
 static_layer:

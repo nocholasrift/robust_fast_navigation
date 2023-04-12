@@ -29,9 +29,12 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/max_velocity", _max_vel, 1.0);
     nh.param("robust_planner/planner_frequency", _dt, .1);
     nh.param("robust_planner/teleop", _is_teleop, false);
+    nh.param("robust_planner/plan_once", _plan_once, false);
+    nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/const_factor", _const_factor, 6.0);
     nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/traj_dt", _traj_dt, .1);
+    nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
     // Publishers 
@@ -85,6 +88,8 @@ Planner::Planner(ros::NodeHandle& nh){
     _is_init = false;
     _is_goal_set = false;
 
+    _prev_jps_cost = -1;
+
     ROS_INFO("Initialized planner!");
 }
 
@@ -99,11 +104,14 @@ void Planner::spin(){
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
+    ROS_INFO("starting local costmap");
     local_costmap = new costmap_2d::Costmap2DROS("local_costmap", tfBuffer);
     local_costmap->start();
 
+    ROS_INFO("starting global costmap");
     global_costmap = new costmap_2d::Costmap2DROS("global_costmap", tfBuffer);
     global_costmap->start();
+    ROS_INFO("done!");
 
     ros::AsyncSpinner spinner(1);
     spinner.start();
@@ -154,7 +162,7 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
     goal(1) = msg->pose.position.y;
 
     _is_goal_set = true;
-    ROS_INFO("goal received!");
+    // ROS_INFO("goal received!");
 }
 
 /**********************************************************************
@@ -412,7 +420,76 @@ void Planner::controlLoop(const ros::TimerEvent&){
     global_costmap->updateMap();
 
     // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
+    
+    if (!plan())
+        count++;
+    else
+        count = 0;
+
+    if (count >= _failsafe_count)
+        plan(true);
+}
+
+bool Planner::plan(bool is_failsafe){
+
+    if (is_failsafe){
+        ROS_INFO("*******************************");
+        ROS_INFO("*** FAILSAFE MODE  ENGAGED ****");
+        ROS_INFO("*******************************");
+    }
+
     costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
+    
+    ros::Time a = ros::Time::now();
+
+    Eigen::Matrix3d initialPVA;
+    bool not_first = false;
+
+    Eigen::Matrix3d finalPVA;
+    finalPVA << Eigen::Vector3d(goal(0),goal(1),0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+
+    if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
+        initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
+                        Eigen::Vector3d::Zero(), 
+                        Eigen::Vector3d::Zero();
+    }
+    else{
+        not_first = true;
+        double factor = _const_factor;
+      
+        double t = (a-start).toSec() + _lookahead;
+        double tmpT = t;
+        
+        int trajInd = std::min((int) (t/_traj_dt), (int) sentTraj.points.size()-1);
+
+        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
+
+        geometry_msgs::PointStamped poseMsg;
+        poseMsg.header.frame_id = "map";
+        poseMsg.header.stamp = ros::Time::now();
+        poseMsg.point.x = p.positions[0];
+        poseMsg.point.y = p.positions[1];
+        poseMsg.point.z = p.positions[2];
+        initPointPub.publish(poseMsg);
+
+        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], 
+                                            p.positions[1], 
+                                            p.positions[2]);
+        // start from robot not moving
+        if (is_failsafe){
+            initialPVA.col(1) = Eigen::Vector3d(0,0,0);
+            initialPVA.col(2) = Eigen::Vector3d(0,0,0);
+        }else{
+            initialPVA.col(1) = Eigen::Vector3d(p.velocities[0]*factor, 
+                                                p.velocities[1]*factor, 
+                                                p.velocities[2]*factor);
+            initialPVA.col(2) = Eigen::Vector3d(p.accelerations[0]*factor*factor,
+                                                p.accelerations[1]*factor*factor,
+                                                p.accelerations[2]*factor*factor);
+        }
+    }
 
     /*************************************
     ************ PERFORM  JPS ************
@@ -420,28 +497,86 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
-    _map->worldToMap(_odom(0), _odom(1), sX, sY);
+    _map->worldToMap(initialPVA.col(0)[0], initialPVA.col(0)[1], sX, sY);
     _map->worldToMap(goal(0), goal(1), eX, eY);
 
     jps.set_start(sX, sY);
     jps.set_destination(eX, eY);
     jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
 
-    jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY());
+    jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY(),
+                _map->getOriginX(), _map->getOriginY(), _map->getResolution());
     jps.JPS();
 
-    std::vector<Eigen::Vector2d> jpsPath = jps.getPath();
+    std::vector<Eigen::Vector2d> jpsPath = jps.getPath(_simplify_jps);
 
     if (jpsPath.size() == 0){
-        ROS_INFO("JPS failed to find path");
-        return;
+        ROS_ERROR("JPS failed to find path");
+        return false;
     }
 
+    double cost = 0;
     for(int i = 0; i < jpsPath.size(); i++){
         double x, y;
         _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
         jpsPath[i] = Eigen::Vector2d(x,y);
+
+        if (i > 0)
+            cost += (jpsPath[i]-jpsPath[i-1]).norm();
     }
+
+    // bool _is_old_jps_valid = true;
+
+    // if (_prev_jps_path.size() > 0){
+    //     for(int i = 0; i < _prev_jps_path.size(); i++)
+
+    //     for(int i = 0; i < _prev_jps_path.size()-1; i++){
+    //         if (jps.isBlocked(_prev_jps_path[i], _prev_jps_path[i+1], false)){
+    //             _is_old_jps_valid = false;
+    //             break;
+    //         } else{
+    //             std::cout << _prev_jps_path[i].transpose()  << " to " << 
+    //                 _prev_jps_path[i+1].transpose() << " is not blocked" << std::endl;
+    //         }
+    //     }
+    // }
+
+    // if (_prev_jps_path.size() > 0 && fabs(_prev_jps_cost/cost - 1) < .01 &&
+    //     _is_old_jps_valid){
+    //     ROS_INFO("sticking with old JPS as new one wasn't significantly different");
+    //     jpsPath = _prev_jps_path;
+    // }
+    // else{
+    //     _prev_jps_path = jpsPath;
+    //     _prev_jps_cost = cost;
+    // }
+
+    vec_Vec2f padded = corridor::getOccupied(*_map);
+    visualization_msgs::Marker paddedMsg;
+    paddedMsg.header.frame_id = _frame_str;
+    paddedMsg.header.stamp = ros::Time::now();
+    paddedMsg.ns = "padded";
+    paddedMsg.id = 420;
+    paddedMsg.type=visualization_msgs::Marker::CUBE_LIST;
+    paddedMsg.action=visualization_msgs::Marker::ADD;
+    paddedMsg.scale.x = _map->getResolution();
+    paddedMsg.scale.y = paddedMsg.scale.x;
+    paddedMsg.scale.z = .1;
+    paddedMsg.pose.orientation.w = 1;
+    paddedMsg.color.r = 0.42;
+    paddedMsg.color.g = 0.153;
+    paddedMsg.color.b = 0.216;
+    paddedMsg.color.a = .55;
+
+    for(Eigen::Vector2d p : padded){
+        geometry_msgs::Point pMs;
+        pMs.x = p[0];
+        pMs.y = p[1];
+        pMs.z = 0;
+        paddedMsg.points.push_back(pMs);
+    }
+
+    paddedLaserPub.publish(paddedMsg);
 
     /*************************************
     ******** PUBLISH JPS TO RVIZ *********
@@ -467,62 +602,26 @@ void Planner::controlLoop(const ros::TimerEvent&){
     ********* GENERATE POLYTOPES *********
     **************************************/
 
+    ROS_INFO("creating corridor");
     hPolys = corridor::createCorridorJPS(jpsPath, *_map, _obs);
+    
+    // if adjacent polytopes don't overlap, don't plan
+    for(int p = 0; p < hPolys.size()-1; p++){
+        if (!geo_utils::overlap(hPolys[p], hPolys[p+1])){
+            ROS_ERROR("CORRIDOR IS NOT FULLY CONNECTED");
+            return false;
+        }
+    }
+
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
-    ROS_INFO("%lu/%lu", jpsPath.size(), hPolys.size());
+    ROS_INFO("generated corridor of size %lu", hPolys.size());
 
     /*************************************
     ******** GENERATE  TRAJECTORY ********
     **************************************/
 
     // initial and final states
-    Eigen::Matrix3d initialPVA;
-    bool not_first = false;
-
-    ros::Time a = ros::Time::now();
-
-    if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
-        initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
-                        Eigen::Vector3d::Zero(), 
-                        Eigen::Vector3d::Zero();
-
-    }
-    else{
-        not_first = true;
-        double factor = _const_factor;
-      
-        double t = (a-start).toSec() + _lookahead;
-        double tmpT = t;
-        
-        int trajInd = std::min((int) (t/_traj_dt), (int) sentTraj.points.size()-1);
-
-        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
-
-        geometry_msgs::PointStamped poseMsg;
-        poseMsg.header.frame_id = "map";
-        poseMsg.header.stamp = ros::Time::now();
-        poseMsg.point.x = p.positions[0];
-        poseMsg.point.y = p.positions[1];
-        poseMsg.point.z = p.positions[2];
-        initPointPub.publish(poseMsg);
-
-        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], 
-                                            p.positions[1], 
-                                            p.positions[2]);
-        initialPVA.col(1) = Eigen::Vector3d(p.velocities[0]*factor, 
-                                            p.velocities[1]*factor, 
-                                            p.velocities[2]*factor);
-        initialPVA.col(2) = Eigen::Vector3d(p.accelerations[0]*factor*factor,
-                                            p.accelerations[1]*factor*factor,
-                                            p.accelerations[2]*factor*factor);
-
-    }
-
-    Eigen::Matrix3d finalPVA;
-    finalPVA << Eigen::Vector3d(goal(0),goal(1),0), 
-                Eigen::Vector3d::Zero(), 
-                Eigen::Vector3d::Zero();
 
     Eigen::VectorXd magnitudeBounds(5);
     Eigen::VectorXd penaltyWeights(5);
@@ -537,7 +636,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
     penaltyWeights(2) = 1e4;    //omg_weight
     penaltyWeights(3) = 1e4;    //theta_weight
     penaltyWeights(4) = 1e5;    //thrust_weight
-    physicalParams(0) = .6;    // mass
+    physicalParams(0) = .1;    // mass
     physicalParams(1) = 9.81;   // gravity
     physicalParams(2) = 0;      // drag
     physicalParams(3) = 0;      // drag
@@ -559,23 +658,23 @@ void Planner::controlLoop(const ros::TimerEvent&){
         penaltyWeights,
         physicalParams
     )){
-        ROS_INFO("optimizer setup failed");
-        return;
+        ROS_ERROR("optimizer setup failed");
+        return false;
     }
 
     ROS_INFO("solving");
     Trajectory<5> newTraj;
     if (std::isinf(gcopter.optimize(newTraj, 1e-5))){
-        ROS_INFO("solver could not find trajectory");
-        return;
+        ROS_ERROR("solver could not find trajectory");
+        return false;
     }
 
     /*************************************
     ******** STITCH  TRAJECTORIES ********
     **************************************/
 
-    // ROS_INFO("stitching trajectories");
-    ROS_INFO("sentTraj size is %lu", sentTraj.points.size());
+    ROS_INFO("stitching trajectories");
+    // ROS_INFO("sentTraj size is %lu", sentTraj.points.size());
     if (sentTraj.points.size() != 0){// || _is_goal_reset){
         // ROS_INFO("sentTraj points size is %lu", sentTraj.points.size());
 
@@ -586,15 +685,24 @@ void Planner::controlLoop(const ros::TimerEvent&){
         double t1 = std::round((ros::Time::now()-start).toSec()*10.)/10.;
         double t2 = std::round(((a-start).toSec() + _lookahead)*10.)/10.;
 
-        ROS_INFO("[%.2f] t1 is %.2f\tt2 is %.2f", (ros::Time::now()-start).toSec(),t1, t2);
+        // ROS_INFO("[%.2f] t1 is %.2f\tt2 is %.2f", (ros::Time::now()-start).toSec(),t1, t2);
 
         int startInd = std::min((int)(t1/_traj_dt), (int) sentTraj.points.size()-1)+1;
         int trajInd = std::min((int) (t2/_traj_dt), (int) sentTraj.points.size()-1);
 
-        ROS_INFO("[%.2f] startInd is %d\ttrajInd is %d", (ros::Time::now()-start).toSec(),startInd, trajInd);
+        // ROS_INFO("[%.2f] startInd is %d\ttrajInd is %d", (ros::Time::now()-start).toSec(),startInd, trajInd);
 
         trajectory_msgs::JointTrajectory aTraj, bTraj;
+        bTraj = convertTrajToMsg(newTraj);
         
+        // if current trajectory violates corridor constraints but previous trajectory
+        // isn't intersecting any lethal obstacles, just keep the old trajectory
+        if (isTrajOutsidePolys(bTraj, hPolys, .2) && !isTrajOverlappingObs(sentTraj, *_map) ){
+            ROS_ERROR("corridor violation was too high and sentTraj isn't overlapping obs");
+            ROS_ERROR("sentTraj overlapping obstacles? %d", isTrajOverlappingObs(sentTraj, *_map));
+            return false;
+        }
+
         for(int i = startInd; i < trajInd; i++){
             aTraj.points.push_back(sentTraj.points[i]);
             aTraj.points.back().time_from_start = ros::Duration((i-startInd)*_traj_dt);
@@ -602,7 +710,6 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
         double startTime = (trajInd-startInd)*_traj_dt;
 
-        bTraj = convertTrajToMsg(newTraj);
 
         for(int i = 0; i < bTraj.points.size(); i++){
             aTraj.points.push_back(bTraj.points[i]);
@@ -616,7 +723,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
         _is_goal_reset = false;
         start = ros::Time::now();
     }else{
-        ROS_INFO("trajectory has been overwritten");
+        // ROS_INFO("trajectory has been overwritten");
         traj = newTraj;
         sentTraj = convertTrajToMsg(newTraj);
 
@@ -629,15 +736,15 @@ void Planner::controlLoop(const ros::TimerEvent&){
     visualizeTraj();
 
     // pubPolys();
-    // exit(0);
+    if (_plan_once)
+        exit(0);
 
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
 
-    astarPath.clear();
+    return true;
 
 }
-
 /**********************************************************************
   Function to publish current goal on a timer. 
 

@@ -1,19 +1,27 @@
 <launch>
 
-    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen"> -->
-    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" >
+    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen">
+    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" > -->
+    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" 
+          launch-prefix="lldb" output="screen">  -->
         <param name="max_velocity" value="1" />
-        <param name="planner_frequency" value=".5" />
-        <param name="lookahead" value=".3" />
+        <param name="planner_frequency" value=".3" />
+        <param name="lookahead" value=".35" />
         <param name="const_factor" value="6" />
         <param name="teleop" value="false" />
+        <param name="plan_once" value="false" />
+        <param name="simplify_jps" value="true" />
         <param name="frame" value="map" />
         <param name="traj_dt" value=".05" />
+        <param name="failsafe_count" value="2" />
 
         <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
-        <remap from="/planner_goal" to="/gap_goal" />
+        <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
+        <remap from="/planner_goal" to="/final_goal" />
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 
+    <!-- <include file="$(find barn_challenge)/launch/barn_nav.launch" />  -->
+    <!-- <include file="$(find gap_detection)/launch/gap_detection.launch" /> -->
     <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
 </launch>

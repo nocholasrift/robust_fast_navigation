@@ -30,6 +30,7 @@ public:
     Planner(ros::NodeHandle& nh);
 
     void visualizeTraj();
+    bool plan(bool is_failsafe = false);
     void spin();
 
 private:
@@ -52,7 +53,8 @@ private:
 
     vec_Vec2f _obs;
 
-    bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset;
+    bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset,
+         _plan_once, _simplify_jps;
 
     std::string _frame_str;
 
@@ -66,13 +68,17 @@ private:
 
     costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
     std::vector<Eigen::Vector2d> astarPath;
+    std::vector<Eigen::Vector2d> _prev_jps_path;
 
     std::vector<Eigen::MatrixX4d> hPolys;
 
     Trajectory<5> traj;
 
     const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt, _const_factor, _lookahead, _traj_dt;
+    double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, 
+    _prev_jps_cost;
+
+    int _failsafe_count;
 
     nav_msgs::OccupancyGrid map;
     

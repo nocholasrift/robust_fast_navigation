@@ -2,14 +2,16 @@
 #define CORRIDOR_H
 
 #include <iostream>
-#include <ros/ros.h>
+
 #include <gcopter/firi.hpp>
 #include <gcopter/geo_utils.hpp>
+
+#include <ros/ros.h>
+#include <costmap_2d/costmap_2d_ros.h>
 #include <visualization_msgs/Marker.h>
 
 #include <decomp_util/seed_decomp.h>
 #include <decomp_util/ellipsoid_decomp.h>
-#include <costmap_2d/costmap_2d_ros.h>
 #include <decomp_geometry/geometric_utils.h>
 
 #include <robust_fast_navigation/utils.h>
@@ -239,7 +241,33 @@ namespace corridor{
 
         for(int i = 0; i < width*height; i++){
 
-            if (grid[i] == 253 || grid[i] == 254){
+            if (grid[i] == costmap_2d::LETHAL_OBSTACLE || 
+                grid[i] == costmap_2d::INSCRIBED_INFLATED_OBSTACLE){
+                unsigned int mx, my;
+                double x, y;
+                _map.indexToCells(i, mx, my);
+                _map.mapToWorld(mx, my, x, y);
+
+                paddedObs.push_back(Vec2f(x,y));
+            }
+
+        }
+
+        return paddedObs;
+    }
+
+    inline vec_Vec2f getLethal(const costmap_2d::Costmap2D& _map){
+
+        vec_Vec2f paddedObs;
+        unsigned char* grid = _map.getCharMap();
+
+        double resolution = _map.getResolution();
+        int width = _map.getSizeInCellsX();
+        int height = _map.getSizeInCellsY();
+
+        for(int i = 0; i < width*height; i++){
+
+            if(grid[i] == costmap_2d::LETHAL_OBSTACLE){
                 unsigned int mx, my;
                 double x, y;
                 _map.indexToCells(i, mx, my);
@@ -383,19 +411,6 @@ namespace corridor{
     }
 
 
-    inline bool isInPoly(const Eigen::MatrixX4d& poly, const Eigen::Vector2d& p){
-        // point needs to be p=(x,y,z,1)
-        // in 2D so z = 0
-        Eigen::Vector4d pR4(p(0), p(1), 0, 1);
-        Eigen::VectorXd res = poly*pR4;
-
-        for (int i = 0; i < res.rows(); i++){
-            if (res(i) > 0)
-                return false;
-        }
-        return true;
-
-    }
 
 
     inline std::vector<Eigen::MatrixX4d> 

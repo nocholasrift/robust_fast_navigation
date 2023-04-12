@@ -32,11 +32,14 @@ public:
     void set_occ_value(double x);
     void set_start(int x, int y);
     void set_destination(int x, int y);
-    void set_map(unsigned char* map, int sizeX, int sizeY);
+    void set_map(unsigned char* map, int sizeX, int sizeY, 
+                 double originX, double originY, double resolution);
     void JPS();
 
     std::vector<Eigen::Vector2d> getPath(bool simplify = true);
     std::vector<Eigen::Vector2d> simplifyPath(const std::vector<Eigen::Vector2d>& path);
+    bool isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, 
+                    double max_range=1e6, bool map_coords=true);
 
 
 private:
@@ -50,9 +53,9 @@ private:
     bool explore_straight(const JPSNode_t& start);
     bool explore_diagonal(const JPSNode_t& start);
 
-    bool isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, double max_range=1e6);
     bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
         int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term);
+    bool worldToMap(double x, double y, unsigned int& mx, unsigned int& my);
 
 
     std::map<int, bool> closedSet;
@@ -61,7 +64,7 @@ private:
     unsigned char* _map;
 
     int sizeX, sizeY, startX, startY, destX, destY, goalInd;
-    double occupied_val;
+    double occupied_val, originX, originY, resolution;
 
     std::priority_queue<JPSNode_t, std::deque<JPSNode_t>, Compare> q;
 

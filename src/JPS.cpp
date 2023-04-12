@@ -13,6 +13,9 @@
 ***********************************************************************/
 JPSPlan::JPSPlan(){
     occupied_val = 100;
+    originX = 0;
+    originY = 0;
+    resolution = 1;
 }
 
 /**********************************************************************
@@ -424,21 +427,27 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
     std::reverse(ret.begin(), ret.end());
 
     if (simplify){
+        
+        ret = simplifyPath(ret);
+        std::reverse(std::begin(ret), std::end(ret));
+        ret = simplifyPath(ret);
+        std::reverse(std::begin(ret), std::end(ret));
 
+        // Logic from JPS3D
         for(int i = 1; i < ret.size()-1; ){
             
-            if ((ret[i+1][0] == ret[i][0] && ret[i-1][0]== ret[i][0]) ||
-                (ret[i+1][1] == ret[i][1] && ret[i-1][1] == ret[i][1]) )
+            Eigen::Vector2d p = (ret[i+1]-ret[i])-(ret[i]-ret[i-1]);
+            if (fabs(p[0]) + fabs(p[1]) <= 1e-2)
                 ret.erase(ret.begin()+i);
             else
                 i++;
+            // if ((ret[i+1][0] == ret[i][0] && ret[i-1][0]== ret[i][0]) ||
+            //     (ret[i+1][1] == ret[i][1] && ret[i-1][1] == ret[i][1]) )
+            //     ret.erase(ret.begin()+i);
+            // else
+            //     i++;
         
         }
-        
-        ret = simplifyPath(ret);
-        std::reverse(std::begin(ret), std::end(ret));
-        ret = simplifyPath(ret);
-        std::reverse(std::begin(ret), std::end(ret));
     }
 
     return ret;
@@ -453,10 +462,14 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
     - map in which grid search will be performed on
     - size of the map in both the x and y directions
 ***********************************************************************/
-void JPSPlan::set_map(unsigned char* map, int sizeX, int sizeY){
+void JPSPlan::set_map(unsigned char* map, int sizeX, int sizeY, 
+                      double originX, double originY, double resolution){
     this->_map = map;
     this->sizeX = sizeX;
     this->sizeY = sizeY;
+    this->originX = originX;
+    this->originY = originY;
+    this->resolution = resolution;
 }
 
 /**********************************************************************
@@ -520,27 +533,43 @@ std::vector<Eigen::Vector2d> JPSPlan::simplifyPath(const std::vector<Eigen::Vect
 
 /**********************************************************************
   This function checks if there is an occupied grid cell between two
-  points in the grid. Notice that the input points are NOT in grid cell
-  coordinate space, but actually the world frame.
+  points in the grid. Notice that the input points are can be in grid cell
+  coordinate space or world frame coordinate space depending on the 
+  map_coords parameter.
 
   Inputs:
     - First point of line to be checked
     - Second point of line to be check
     - Maximum range for bresenham to check before terminating
+    - Map coords flag indicating if incoming points are in map cell 
+      coordinates or in world coordinates
 
   Returns:
     - True if an obstacle blocks the line connecting the two points
     - False if line is obstacle free
 ***********************************************************************/
-bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, double max_range){
+bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, double max_range, bool  map_coords){
     
     // raycast and bresenham
     unsigned int size_x = this->sizeX;
 
-    double sx = p1[0];
-    double sy = p1[1];
-    double ex = p2[0];
-    double ey = p2[1];
+    unsigned int sx, sy, ex, ey;
+    if (map_coords){
+        sx = p1[0];
+        sy = p1[1];
+        ex = p2[0];
+        ey = p2[1];
+    } else{
+        if (!worldToMap(p1[0], p1[1], sx, sy)){
+            std::cout << "point " << sx << ", " << sy  <<  " outside map" << std::endl;
+            return false;
+        }
+
+        if (!worldToMap(p2[0], p2[1], ex, ey)){
+            std::cout << "point " << ex << ", " << ey  <<  " outside map" << std::endl;
+            return false;
+        }
+    }
 
     int dx = ex - sx;
     int dy = ey - sy;
@@ -552,7 +581,6 @@ bool JPSPlan::isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, do
     int offset_dy = (dy > 0 ? 1 : -1) * this->sizeX;
 
     unsigned int offset = sy * size_x + sx;
-
     double dist = hypot(dx, dy);
     double scale = (dist == 0.0) ? 1.0 : std::min(1.0, max_range / dist);
 
@@ -608,4 +636,16 @@ bool JPSPlan::bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, i
     
     term = offset;
     return is_hit;
+}
+
+bool JPSPlan::worldToMap(double x, double y, unsigned int& mx, unsigned int& my){
+    mx = (int)((x - originX)/resolution);
+    my = (int)((y - originY)/resolution);
+
+
+    if (mx >= sizeX || my >= sizeY)
+        return false;
+
+    return true;
+
 }

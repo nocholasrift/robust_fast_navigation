@@ -6,11 +6,9 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Pose1
-        - /Odometry1
         - /Odometry1/Shape1
       Splitter Ratio: 0.5
-    Tree Height: 719
+    Tree Height: 363
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -131,7 +129,7 @@ Visualization Manager:
       Marker Topic: /visualizer/edge
       Name: Marker
       Namespaces:
-        edge: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -139,7 +137,7 @@ Visualization Manager:
       Marker Topic: /visualizer/mesh
       Name: Marker
       Namespaces:
-        mesh: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -298,7 +296,23 @@ Visualization Manager:
       Marker Topic: /MINCO_path
       Name: Marker
       Namespaces:
-        j: true
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /gaps_viz
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /paddedObs
+      Name: Marker
+      Namespaces:
+        {}
       Queue Size: 100
       Value: true
   Enabled: true
@@ -328,7 +342,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: -6.281589984893799
+      Angle: -18.851581573486328
       Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -338,10 +352,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: -60.46127700805664
+      Scale: -67.46183013916016
       Target Frame: <Fixed Frame>
-      X: 3.037478446960449
-      Y: 0.3519006371498108
+      X: 3.5751852989196777
+      Y: 0.18310138583183289
     Saved: ~
 Window Geometry:
   Displays:
@@ -359,5 +373,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 956
-  X: 2884
+  X: 964
   Y: 27
