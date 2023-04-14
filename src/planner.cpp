@@ -88,6 +88,9 @@ Planner::Planner(ros::NodeHandle& nh){
     _is_init = false;
     _is_goal_set = false;
 
+    _map_received = false;
+    _is_costmap_started = false;
+
     _prev_jps_cost = -1;
 
     ROS_INFO("Initialized planner!");
@@ -101,17 +104,23 @@ Planner::Planner(ros::NodeHandle& nh){
 ***********************************************************************/
 void Planner::spin(){
     //tf::TransformListener tfListener(ros::Duration(10));
+
+    // ROS_INFO("starting local costmap");
+    // local_costmap = new costmap_2d::Costmap2DROS("local_costmap", tfBuffer);
+    // local_costmap->start();
+    
+    // allow time for transforms and things to be published
+    // ros::Duration(3).sleep();
+
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
-    ROS_INFO("starting local costmap");
-    local_costmap = new costmap_2d::Costmap2DROS("local_costmap", tfBuffer);
-    local_costmap->start();
-
-    ROS_INFO("starting global costmap");
+    ROS_INFO("initializing global costmap");
     global_costmap = new costmap_2d::Costmap2DROS("global_costmap", tfBuffer);
+    ROS_INFO("starting global costmap");
     global_costmap->start();
     ROS_INFO("done!");
+    _is_costmap_started = true;
 
     ros::AsyncSpinner spinner(1);
     spinner.start();
@@ -177,6 +186,7 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
 ***********************************************************************/
 void Planner::mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg){
     map = *msg;
+    _map_received = true;
 }
 
 /**********************************************************************
@@ -211,10 +221,28 @@ void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
 	_odom(1) = msg->pose.pose.position.y; 
 	_odom(2) = yaw;
 
-    _vel = Eigen::VectorXd(3);
-    _vel(0) = msg->twist.twist.linear.x*cos(yaw);
-    _vel(1) = msg->twist.twist.linear.x*sin(yaw);
-    _vel(2) = 0;
+    // geometry_msgs::PoseStamped globalPos;
+    // if(global_costmap->getRobotPose(globalPos)){
+    //     tf::Quaternion q(
+    //         msg->pose.pose.orientation.x,
+    //         msg->pose.pose.orientation.y,
+    //         msg->pose.pose.orientation.z,
+    //         msg->pose.pose.orientation.w
+    //     );
+    //     tf::Matrix3x3 m(q);
+    //     double roll, pitch, yaw;
+    //     m.getRPY(roll, pitch, yaw);
+
+    //     _odom = Eigen::VectorXd(3);
+    //     _odom(0) = globalPos.pose.position.x;
+    //     _odom(1) = globalPos.pose.position.y;
+    //     _odom(2) = yaw;
+    // }
+
+    // _vel = Eigen::VectorXd(3);
+    // _vel(0) = msg->twist.twist.linear.x*cos(yaw);
+    // _vel(1) = msg->twist.twist.linear.x*sin(yaw);
+    // _vel(2) = 0;
 
     _prevOdom = _odom;
     _is_init = true;
@@ -403,7 +431,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     static int count = 0;
 
-    if (!_is_init || !_is_goal_set)
+    
+
+    if (!_is_init || !_is_goal_set || !_is_costmap_started)
         return;
 
     if ((_odom(1)-goal(1))*(_odom(1)-goal(1))+(_odom(0)-goal(0))*(_odom(0)-goal(0)) < .2)
@@ -630,7 +660,7 @@ bool Planner::plan(bool is_failsafe){
     magnitudeBounds(1) = .8;   //omg_max
     magnitudeBounds(2) = .8;    //theta_max
     magnitudeBounds(3) = -1;     //thrust_min
-    magnitudeBounds(4) = .1;    //thrust_max
+    magnitudeBounds(4) = .2;    //thrust_max
     penaltyWeights(0) = 1e4;    //pos_weight
     penaltyWeights(1) = 1e4;    //vel_weight
     penaltyWeights(2) = 1e4;    //omg_weight

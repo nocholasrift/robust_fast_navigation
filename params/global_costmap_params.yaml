@@ -9,6 +9,7 @@ z_resolution: 1
 z_voxels: 2
 
 static_map: true
+global_frame: "map"
 rolling_window: false
 
 obstacle_range: 4.5
@@ -19,8 +20,9 @@ publish_voxel_map: false
 transform_tolerance: 0.5
 meter_scoring: true
 
-footprint: [[-0.21, -0.165], [-0.21, 0.165], [0.21, 0.165], [0.21, -0.165]]
-footprint_padding: 0.1
+# footprint: [[-0.21, -0.165], [-0.21, 0.165], [0.21, 0.165], [0.21, -0.165]]
+footprint: [[-0.25, -0.21], [-0.25, 0.21], [0.25, 0.21], [0.25, -0.21]]
+footprint_padding: 0.12
 
 update_frequency: 10
 publish_frequency: 10
