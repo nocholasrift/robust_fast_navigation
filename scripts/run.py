@@ -158,11 +158,12 @@ if __name__ == "__main__":
     start_time = curr_time
     start_time_cpu = time.time()
     collided = False
+    timeout_time = 10000
 
     if planner_process.poll() is not None or prog_crash:
         collided = True
     
-    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < 50 and curr_coor[1] < 10:
+    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < timeout_time and curr_coor[1] < 10:
         curr_time = rospy.get_time()
         pos = gazebo_sim.get_model_state().pose.position
         curr_coor = (pos.x, pos.y)
@@ -180,7 +181,7 @@ if __name__ == "__main__":
     success = False
     if collided:
         status = "collided"
-    elif curr_time - start_time >= 50:
+    elif curr_time - start_time >= timeout_time:
         status = "timeout"
     else:
         status = "succeeded"

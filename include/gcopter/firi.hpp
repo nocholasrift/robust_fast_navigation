@@ -229,6 +229,9 @@ namespace firi
         if (ret < 0)
         {
             printf("FIRI WARNING: %s\n", lbfgs::lbfgs_strerror(ret));
+            
+            delete[] optData;
+            return false;
         }
 
         p = x.head<3>() + interior;
@@ -409,7 +412,9 @@ namespace firi
                 break;
             }
 
-            maxVolInsEllipsoid(hPoly, R, p, r);
+            // Nick: Added if statement here
+            if (!maxVolInsEllipsoid(hPoly, R, p, r))
+                return false;
         }
 
         return true;

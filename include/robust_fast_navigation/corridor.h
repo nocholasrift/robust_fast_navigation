@@ -18,7 +18,7 @@
 
 namespace corridor{
 
-    inline void convexCover(const std::vector<Eigen::Vector3d> &path,
+    inline bool convexCover(const std::vector<Eigen::Vector3d> &path,
                             const std::vector<Eigen::Vector3d> &points,
                             const Eigen::Vector3d &lowCorner,
                             const Eigen::Vector3d &highCorner,
@@ -73,8 +73,10 @@ namespace corridor{
             }
             Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(valid_pc[0].data(), 3, valid_pc.size());
 
-            if (!firi::firi(bd, pc, a, b, hp))
-                std::cout << "firi failed" << std::endl;
+            if (!firi::firi(bd, pc, a, b, hp)){
+                std::cout << "firi failure :(" << std::endl;
+                return false;
+            }
 
             if (hpolys.size() != 0)
             {
@@ -82,8 +84,10 @@ namespace corridor{
                 if (3 <= ((hp * ah).array() > -eps).cast<int>().sum() +
                              ((hpolys.back() * ah).array() > -eps).cast<int>().sum())
                 {
-                    if (!firi::firi(bd, pc, a, a, gap, 1))
-                        std::cout << "firi failed again!" << std::endl;
+                    if (!firi::firi(bd, pc, a, a, gap, 1)){
+                        std::cout << "firi failure :(" << std::endl;
+                        return false;
+                    }
                         
                     hpolys.emplace_back(gap);
                 }
@@ -91,6 +95,8 @@ namespace corridor{
 
             hpolys.emplace_back(hp);
         }
+
+        return true;
     }
 
     // following bresenham / raycast method taken with <3 from https://docs.ros.org/en/api/costmap_2d/html/costmap__2d_8h_source.html
@@ -538,10 +544,11 @@ namespace corridor{
         }
     }
 
-    inline std::vector<Eigen::MatrixX4d> createCorridorJPS(
+    inline bool createCorridorJPS(
         const std::vector<Eigen::Vector2d>& path, const costmap_2d::Costmap2D& _map,
-        const vec_Vec2f& _obs){
+        const vec_Vec2f& _obs, std::vector<Eigen::MatrixX4d>& polys){
 
+        polys.clear();
         std::vector<Eigen::Vector3d> path3d, obs3d;
         for(Eigen::Vector2d p : path){
             path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
@@ -555,7 +562,6 @@ namespace corridor{
             obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
         }
 
-        std::vector<Eigen::MatrixX4d> polys;
         double x = _map.getOriginX();
         double y = _map.getOriginY();
         double w = _map.getSizeInMetersX();
@@ -563,12 +569,15 @@ namespace corridor{
 
         // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
         // exit(0);
-        convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
+        bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
             Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
-        // std::vector<Eigen::MatrixX4d> r = simplifyCorridor(polys);
-        // return r;
+
+        if (!status)
+            return false;
+
         shortCut(polys);
-        return polys;
+        
+        return true;
 
         // for(int i = 0; i < path.size()-1; i++){
         //     polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));

@@ -26,14 +26,14 @@
 Planner::Planner(ros::NodeHandle& nh){
 
     // ROS Params
-    nh.param("robust_planner/max_velocity", _max_vel, 1.0);
-    nh.param("robust_planner/planner_frequency", _dt, .1);
-    nh.param("robust_planner/teleop", _is_teleop, false);
-    nh.param("robust_planner/plan_once", _plan_once, false);
-    nh.param("robust_planner/simplify_jps", _simplify_jps, false);
-    nh.param("robust_planner/const_factor", _const_factor, 6.0);
-    nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/traj_dt", _traj_dt, .1);
+    nh.param("robust_planner/teleop", _is_teleop, false);
+    nh.param("robust_planner/lookahead", _lookahead, .15);
+    nh.param("robust_planner/planner_frequency", _dt, .1);
+    nh.param("robust_planner/max_velocity", _max_vel, 1.0);
+    nh.param("robust_planner/plan_once", _plan_once, false);
+    nh.param("robust_planner/const_factor", _const_factor, 6.0);
+    nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
@@ -42,7 +42,6 @@ Planner::Planner(ros::NodeHandle& nh){
         nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
     wptVizPub = 
         nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
-        
     trajPub = 
         nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
     trajPubNoReset = 
@@ -83,6 +82,7 @@ Planner::Planner(ros::NodeHandle& nh){
 
     // Timers
     goalTimer = nh.createTimer(ros::Duration(_dt/2.0), &Planner::goalLoop, this);
+    publishTimer = nh.createTimer(ros::Duration(_dt*2), &Planner::publishOccupied, this);
     controlTimer = nh.createTimer(ros::Duration(_dt), &Planner::controlLoop, this);
 
     _is_init = false;
@@ -172,6 +172,43 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
 
     _is_goal_set = true;
     // ROS_INFO("goal received!");
+}
+
+/**********************************************************************
+  Function which publishes the occupied cells of a global costmap.
+***********************************************************************/
+void Planner::publishOccupied(const ros::TimerEvent&){
+
+    if (!_is_costmap_started)
+        return;
+
+    costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
+    vec_Vec2f padded = corridor::getOccupied(*_map);
+    visualization_msgs::Marker paddedMsg;
+    paddedMsg.header.frame_id = _frame_str;
+    paddedMsg.header.stamp = ros::Time::now();
+    paddedMsg.ns = "padded";
+    paddedMsg.id = 420;
+    paddedMsg.type=visualization_msgs::Marker::CUBE_LIST;
+    paddedMsg.action=visualization_msgs::Marker::ADD;
+    paddedMsg.scale.x = _map->getResolution();
+    paddedMsg.scale.y = paddedMsg.scale.x;
+    paddedMsg.scale.z = .1;
+    paddedMsg.pose.orientation.w = 1;
+    paddedMsg.color.r = 0.42;
+    paddedMsg.color.g = 0.153;
+    paddedMsg.color.b = 0.216;
+    paddedMsg.color.a = .55;
+
+    for(Eigen::Vector2d p : padded){
+        geometry_msgs::Point pMs;
+        pMs.x = p[0];
+        pMs.y = p[1];
+        pMs.z = 0;
+        paddedMsg.points.push_back(pMs);
+    }
+
+    paddedLaserPub.publish(paddedMsg);
 }
 
 /**********************************************************************
@@ -376,6 +413,7 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
     msg.header.frame_id = _frame_str;
 
     double factor = traj.getMaxVelRate() / _max_vel;
+    // ROS_ERROR("MAX VEL RATE IS %.2f", traj.getMaxVelRate());
     factor = _const_factor;
     double t = 0.;
 
@@ -409,23 +447,12 @@ trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &
 }
 
 /**********************************************************************
-  Function for the main control loop of the planner. This function is 
-  run on a timer controlled by the _dt ros parameter, and only runs
-  if both the _is_init and is_goal_set flags are set to true. The 
-  overall process is:
-    1.  Find JPS path from a point along previous trajectory to goal.
-    1a. If first iteration, plan starting from robot position instead.
-    2.  Expand intersecting polytopes around JPS path.
-    3.  Send polytope and other physical constraints into optimizer.
-    4.  Stitch resulting trajectory to previous one and publish to 
-        external trajectory tracker.
+  Function for the main control loop of the planner, calls the plan()
+  method which takes care of overall planning logic.
 
   Inputs:
     - Just a timer event which controls the rate at which the control
       loop is run.
-
-  TODOS: 
-    - Decide whether to stay with global costmap or use local costmap
 ***********************************************************************/
 void Planner::controlLoop(const ros::TimerEvent&){
 
@@ -446,7 +473,7 @@ void Planner::controlLoop(const ros::TimerEvent&){
     ************* UPDATE MAP *************
     **************************************/
 
-    global_costmap->resetLayers();
+    // global_costmap->resetLayers();
     global_costmap->updateMap();
 
     // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
@@ -460,6 +487,22 @@ void Planner::controlLoop(const ros::TimerEvent&){
         plan(true);
 }
 
+/**********************************************************************
+  This function is run on a timer controlled by the _dt ros parameter, 
+  and only runs if both the _is_init and is_goal_set flags are set to 
+  true. The overall process is:
+    1.  Find JPS path from a point along previous trajectory to goal.
+    1a. If first iteration, plan starting from robot position instead.
+    2.  Expand intersecting polytopes around JPS path.
+    3.  Send polytope and other physical constraints into optimizer.
+    4.  Stitch resulting trajectory to previous one and publish to 
+        external trajectory tracker.
+
+    Inputs:
+      - is_failsafe flag which dictates if robot will stop for next
+        planning phase. This is set true when planning failed 
+        several times in a row.
+***********************************************************************/
 bool Planner::plan(bool is_failsafe){
 
     if (is_failsafe){
@@ -581,32 +624,6 @@ bool Planner::plan(bool is_failsafe){
     //     _prev_jps_cost = cost;
     // }
 
-    vec_Vec2f padded = corridor::getOccupied(*_map);
-    visualization_msgs::Marker paddedMsg;
-    paddedMsg.header.frame_id = _frame_str;
-    paddedMsg.header.stamp = ros::Time::now();
-    paddedMsg.ns = "padded";
-    paddedMsg.id = 420;
-    paddedMsg.type=visualization_msgs::Marker::CUBE_LIST;
-    paddedMsg.action=visualization_msgs::Marker::ADD;
-    paddedMsg.scale.x = _map->getResolution();
-    paddedMsg.scale.y = paddedMsg.scale.x;
-    paddedMsg.scale.z = .1;
-    paddedMsg.pose.orientation.w = 1;
-    paddedMsg.color.r = 0.42;
-    paddedMsg.color.g = 0.153;
-    paddedMsg.color.b = 0.216;
-    paddedMsg.color.a = .55;
-
-    for(Eigen::Vector2d p : padded){
-        geometry_msgs::Point pMs;
-        pMs.x = p[0];
-        pMs.y = p[1];
-        pMs.z = 0;
-        paddedMsg.points.push_back(pMs);
-    }
-
-    paddedLaserPub.publish(paddedMsg);
 
     /*************************************
     ******** PUBLISH JPS TO RVIZ *********
@@ -633,7 +650,11 @@ bool Planner::plan(bool is_failsafe){
     **************************************/
 
     ROS_INFO("creating corridor");
-    hPolys = corridor::createCorridorJPS(jpsPath, *_map, _obs);
+    // don't neet to clear hPolys before calling because method will do it
+    if (!corridor::createCorridorJPS(jpsPath, *_map, _obs, hPolys)){
+        ROS_ERROR("CORRIDOR GENERATION FAILED");
+        return false;
+    }
     
     // if adjacent polytopes don't overlap, don't plan
     for(int p = 0; p < hPolys.size()-1; p++){
@@ -699,6 +720,10 @@ bool Planner::plan(bool is_failsafe){
         return false;
     }
 
+    if (newTraj.getMaxVelRate() > _const_factor){
+        ROS_ERROR("new trajectory was way too fast (%.2f m/s)!", newTraj.getMaxVelRate());
+        return false;
+    }
     /*************************************
     ******** STITCH  TRAJECTORIES ********
     **************************************/
@@ -765,9 +790,10 @@ bool Planner::plan(bool is_failsafe){
 
     visualizeTraj();
 
-    // pubPolys();
-    if (_plan_once)
+    if (_plan_once){
+        pubPolys();
         exit(0);
+    }
 
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
@@ -775,6 +801,7 @@ bool Planner::plan(bool is_failsafe){
     return true;
 
 }
+
 /**********************************************************************
   Function to publish current goal on a timer. 
 

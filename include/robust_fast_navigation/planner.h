@@ -35,17 +35,23 @@ public:
 
 private:
 
-    void clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg);
-    void goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg);
+    // callbacks
     void odomcb(const nav_msgs::Odometry::ConstPtr& msg);
-    void lasercb(const sensor_msgs::LaserScan::ConstPtr& msg);
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
     void mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg);
-    void controlLoop(const ros::TimerEvent&);
+    void lasercb(const sensor_msgs::LaserScan::ConstPtr& msg);
+    void goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg);
+    void clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg);
+
+    // timers
     void goalLoop(const ros::TimerEvent&);
-    void projectIntoMap(const Eigen::Vector2d& goal);
-    void pubPolys();
+    void controlLoop(const ros::TimerEvent&);
+    void publishOccupied(const ros::TimerEvent&);
     
+    // utilities
+    void pubPolys();
+    void projectIntoMap(const Eigen::Vector2d& goal);
+
     template <int D>
     trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D> &traj);
 
@@ -61,7 +67,7 @@ private:
     trajectory_msgs::JointTrajectory sentTraj;
     
     ros::Time start;
-    ros::Timer controlTimer, goalTimer;
+    ros::Timer controlTimer, goalTimer, publishTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, intGoalPub,
     edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub;
