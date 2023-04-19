@@ -35,5 +35,5 @@
 
     <!-- <include file="$(find barn_challenge)/launch/barn_nav.launch" />  -->
     <!-- <include file="$(find gap_detection)/launch/gap_detection.launch" /> -->
-    <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" />
+    <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
 </launch>

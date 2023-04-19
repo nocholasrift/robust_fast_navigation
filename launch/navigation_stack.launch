@@ -7,7 +7,7 @@
     <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
     <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
 
-    <include file="$(find jackal_navigation)/launch/include/gmapping.launch" />
+    <include file="$(find robust_fast_navigation)/launch/gmapping.launch" />
 
     <!-- <node name="gap_detector" pkg="gap_detection" type="gap_detector" output="screen">
         <param name="goal_x" value="$(arg goal_x)" />
