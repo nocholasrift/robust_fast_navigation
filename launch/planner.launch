@@ -8,7 +8,7 @@
         <!-- Max velocity for planner to execute. Doesn't currently work -->
         <param name="max_velocity" value="1" />
         <!-- How frequently the planner loop runs in seconds -->
-        <param name="planner_frequency" value=".3" />
+        <param name="planner_frequency" value=".2" />
         <!-- How far ahead in time the planner will look to grab the initial pos -->
         <param name="lookahead" value=".35" />
         <!-- Divide speeds in trajectory by this number, this is how speed is controlled -->
@@ -25,7 +25,11 @@
         <!-- Time discretization of trajectory -->
         <param name="traj_dt" value=".05" />
         <!-- How many planner failures before entering failsafe mode -->
-        <param name="failsafe_count" value="2" />
+        <param name="failsafe_count" value="4" />
+        <!-- Plan only within free space, doesn't work very well... -->
+        <param name="plan_in_free" value="false" />
+        <!-- How far out in distance the planner will generate a trajectory -->
+        <param name="max_dist_horizon" value="4" />
 
         <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
         <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
