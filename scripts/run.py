@@ -1,3 +1,4 @@
+import sys
 import time
 import argparse
 import subprocess
@@ -13,6 +14,7 @@ from gazebo_simulation import GazeboSimulation
 INIT_POSITION = [-2, 3, 1.57]  # in world frame
 GOAL_POSITION = [8.5,0]  # relative to the initial position
 
+bag_process = None
 gazebo_process = None
 nav_stack_process = None
 planner_process = None
@@ -24,6 +26,10 @@ def shutdown():
     global gazebo_process, nav_stack_process, planner_process
     
     rospy.loginfo("*************** shutting nodes down now! ***************")
+    if bag_process != None:
+        bag_process.terminate()
+        bag_process.wait()
+
     gazebo_process.terminate()
     gazebo_process.wait()
     nav_stack_process.terminate()
@@ -46,6 +52,7 @@ if __name__ == "__main__":
     parser.add_argument('--world_idx', type=int, default=0)
     parser.add_argument('--gui', action="store_true")
     parser.add_argument('--out', type=str, default="out.txt")
+    parser.add_argument('--bag', action="store_true")
     args = parser.parse_args()
     
     ##########################################################################################
@@ -55,7 +62,7 @@ if __name__ == "__main__":
     # os.environ["JACKAL_LASER"] = "1"
     # os.environ["JACKAL_LASER_MODEL"] = "ust10"
     # os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
-    
+
     rospack = rospkg.RosPack()
     base_path = rospack.get_path('jackal_gazebo')
     world_name = "BARN/world_%d.world" %(args.world_idx)
@@ -100,8 +107,43 @@ if __name__ == "__main__":
     ## (Customize this block to add your own navigation stack)
     ##########################################################################################
     
-    time.sleep(5)
     planner_path = rospack.get_path('robust_fast_navigation')
+
+    bag_dir_path = None
+    bag_fname = None
+
+    if args.bag:
+
+        from datetime import datetime
+
+        bag_dir_path = os.path.join(planner_path, 'bags')
+        dt_str = "{:%Y_%m_%d-%H-%M-%S}".format(datetime.now())
+        bag_fname="world_%d_%s.bag" %(args.world_idx, dt_str)
+        bag_launch_file = os.path.join(planner_path, 'launch/record_bag.launch')
+        
+        if not os.path.exists(bag_dir_path):
+            os.makedirs(bag_dir_path)
+
+        # i = 0
+        # MAX_ITER=1000
+        # bag_fname = init_bag_fname+"%d.bag" %(i)
+        # bag_path_name=os.path.join(bag_dir_path, bag_fname)
+
+        # while i < MAX_ITER and os.path.exists(bag_path_name):
+        #     i += 1
+        #     bag_fname = init_bag_fname+"%d.bag" %(i)
+        #     bag_path_name=os.path.join(bag_dir_path, bag_fname)
+
+
+        print("opening bag file at", (os.path.join(bag_dir_path,bag_fname)))
+        bag_process = subprocess.Popen([
+            'roslaunch',
+            bag_launch_file,
+            'path:=' + bag_dir_path,
+            'bag_name:=' + bag_fname,
+        ])
+
+    time.sleep(5)
     nav_stack_launch_file = join(planner_path, 'launch/navigation_stack.launch')
     nav_stack_process = subprocess.Popen([
         'roslaunch',
@@ -206,6 +248,15 @@ if __name__ == "__main__":
     with open(args.out, "a") as f:
         f.write("%d %d %d %d %.4f %.4f\n" %(args.world_idx, success, collided, (curr_time - start_time)>=100, curr_time - start_time, nav_metric))
     
+    if bag_process != None:
+        bag_process.terminate()
+        bag_process.wait()
+    
+    if args.bag and nav_metric >= .245:
+        print("Navigation succeeded, so deleting bag file")
+        os.remove(os.path.join(bag_dir_path,bag_fname))
+
+
     gazebo_process.terminate()
     gazebo_process.wait()
     nav_stack_process.terminate()
