@@ -1,0 +1,7 @@
+<launch>
+    <arg name="bag_name" default="trial" />
+    <arg name="path" default="$(find robust_fast_navigation)" />
+
+    <node pkg="rosbag" type="record" name="rosbag_record_trial" respawn="true" 
+        args="-O $(arg path)/$(arg bag_name) -a"/>
+</launch>
