@@ -30,11 +30,13 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/planner_frequency", _dt, .1);
-    nh.param("robust_planner/max_velocity", _max_vel, 1.0);
+    nh.param("robust_planner/max_velocity", _max_vel, 1.);
     nh.param("robust_planner/plan_once", _plan_once, false);
-    nh.param("robust_planner/const_factor", _const_factor, 6.0);
+    nh.param("robust_planner/const_factor", _const_factor, 6.);
     nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
+    nh.param("robust_planner/plan_in_free", _plan_in_free, false);
+    nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
     // Publishers 
@@ -62,6 +64,8 @@ Planner::Planner(ros::NodeHandle& nh){
 
     jpsPub = 
         nh.advertise<nav_msgs::Path>("/jpsPath", 0);
+    jpsPubFree = 
+        nh.advertise<nav_msgs::Path>("/jpsPathFree", 0);
 
     jpsPointsPub = 
         nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
@@ -632,6 +636,7 @@ bool Planner::plan(bool is_failsafe){
     nav_msgs::Path jpsMsg;
     jpsMsg.header.stamp = ros::Time::now();
     jpsMsg.header.frame_id = _frame_str;
+
     for(Eigen::Vector2d p : jpsPath){
         geometry_msgs::PoseStamped pMsg;
         pMsg.header = jpsMsg.header;
@@ -644,6 +649,57 @@ bool Planner::plan(bool is_failsafe){
     }
 
     jpsPub.publish(jpsMsg);
+
+    Eigen::Vector2d goalPoint;
+    if (_plan_in_free){
+
+        nav_msgs::Path jpsMsgFree;
+        jpsMsgFree.header.stamp = ros::Time::now();
+        jpsMsgFree.header.frame_id = _frame_str;
+        std::vector<Eigen::Vector2d> jpsFree = getJPSInFree(jpsPath, *_map);
+        ROS_INFO("jpsFree size: %lu", jpsFree.size());
+
+        for(Eigen::Vector2d p : jpsFree){
+            geometry_msgs::PoseStamped pMsg;
+            pMsg.header = jpsMsgFree.header;
+            pMsg.pose.position.x = p(0);
+            pMsg.pose.position.y = p(1);
+            pMsg.pose.position.z = 0;
+            pMsg.pose.orientation.w = 1;
+            jpsMsgFree.poses.push_back(pMsg);
+            
+        }
+
+        jpsPubFree.publish(jpsMsgFree);
+
+        finalPVA << Eigen::Vector3d(jpsFree.back()[0],jpsFree.back()[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+
+        if (jpsFree.size() == 0){
+            ROS_ERROR("JPSFree has size 0");
+            return false;
+        }
+
+        jpsPath = jpsFree;
+    } else {
+        std::vector<Eigen::Vector2d> newJPSPath;
+        if (getJPSIntersectionWithSphere(
+            jpsPath, 
+            newJPSPath,
+            Eigen::Vector2d(_odom[0], _odom[1]),
+            _max_dist_horizon, goalPoint)){
+
+            jpsPath = newJPSPath;
+
+            finalPVA << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+        } else{
+            ROS_WARN("JPS path did not intersect circle around robot");
+        }
+
+    }
 
     /*************************************
     ********* GENERATE POLYTOPES *********
