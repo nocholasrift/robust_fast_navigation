@@ -592,15 +592,15 @@ bool Planner::plan(bool is_failsafe){
         return false;
     }
 
-    double cost = 0;
-    for(int i = 0; i < jpsPath.size(); i++){
-        double x, y;
-        _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
-        jpsPath[i] = Eigen::Vector2d(x,y);
+    // double cost = 0;
+    // for(int i = 0; i < jpsPath.size(); i++){
+    //     double x, y;
+    //     _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
+    //     jpsPath[i] = Eigen::Vector2d(x,y);
 
-        if (i > 0)
-            cost += (jpsPath[i]-jpsPath[i-1]).norm();
-    }
+    //     if (i > 0)
+    //         cost += (jpsPath[i]-jpsPath[i-1]).norm();
+    // }
 
     // bool _is_old_jps_valid = true;
 

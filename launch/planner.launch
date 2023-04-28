@@ -14,9 +14,9 @@
         <!-- Divide speeds in trajectory by this number, this is how speed is controlled -->
         <param name="const_factor" value="6" />
         <!-- Plan without sending anything to external tracker -->
-        <param name="teleop" value="false" />
+        <param name="teleop" value="true" />
         <!-- Plan once and then exit, useful for debugging -->
-        <param name="plan_once" value="false" />
+        <param name="plan_once" value="true" />
         <!-- Whether or not to simplify the JPS before constructing corridor.
              It's best to keep this set as true. -->
         <param name="simplify_jps" value="true" />
@@ -31,9 +31,9 @@
         <!-- How far out in distance the planner will generate a trajectory -->
         <param name="max_dist_horizon" value="4" />
 
-        <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
+        <remap from="/planner_goal" to="/move_base_simple/goal" />
         <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
-        <remap from="/planner_goal" to="/final_goal" />
+        <!-- <remap from="/planner_goal" to="/final_goal" /> -->
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 

@@ -371,7 +371,7 @@ void JPSPlan::JPS(){
 
         if (node.x == destX && node.y == destY){
             goalInd = destY * sizeX + destX;
-            //std::cout << "found goal (" << destX << ", " << destY <<  ") :)" << std::endl;
+            // std::cout << "found goal (" << destX << ", " << destY <<  ") :)" << std::endl;
             break;
         }
 
@@ -448,7 +448,14 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
             //     i++;
         
         }
+    } 
+        
+    for(int i = 0; i < ret.size(); i++){
+        double x,y;
+        mapToWorld(ret[i][0], ret[i][1], x, y);
+        ret[i] = Eigen::Vector2d(x,y);
     }
+  
 
     return ret;
 }
@@ -533,7 +540,7 @@ std::vector<Eigen::Vector2d> JPSPlan::simplifyPath(const std::vector<Eigen::Vect
 
 /**********************************************************************
   This function checks if there is an occupied grid cell between two
-  points in the grid. Notice that the input points are can be in grid cell
+  points in the grid. Notice that the input points can be in grid cell
   coordinate space or world frame coordinate space depending on the 
   map_coords parameter.
 
@@ -648,4 +655,9 @@ bool JPSPlan::worldToMap(double x, double y, unsigned int& mx, unsigned int& my)
 
     return true;
 
+}
+
+void JPSPlan::mapToWorld(unsigned int mx, unsigned int my, double& x, double& y){
+    x = originX + (mx+.5)*resolution;
+    y = originY + (my+.5)*resolution;
 }

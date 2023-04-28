@@ -3,17 +3,19 @@
 #include <ros/ros.h>
 #include <Eigen/Eigen>
 
+#include <nav_msgs/Path.h>
 #include <std_msgs/Int32.h>
 #include <geometry_msgs/Point.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/Float64MultiArray.h>
 
-
+#include <robust_fast_navigation/JPS.h>
+#include <robust_fast_navigation/corridor.h>
 
 bool init = false;
 int angle = -1;
-ros::Publisher gridPub, boundaryPub;
+ros::Publisher gridPub, boundaryPub, jpsPub, meshPub, edgePub;
 std_msgs::Float64MultiArray brsMsg;
 
 
@@ -88,6 +90,7 @@ void mapPublisher(const ros::TimerEvent&){
     mapMsg.data.resize(sizeX*sizeY);
 
     std::vector<Eigen::Vector2d> boundary;
+    unsigned char map_unsigned[mapMsg.data.size()];
 
     int k = 0;
     for(int i = 0; i < sizeY; i++){
@@ -111,6 +114,8 @@ void mapPublisher(const ros::TimerEvent&){
                 mapMsg.data[k++] = 0;
             else
                 mapMsg.data[k++] = 100;
+
+            map_unsigned[k-1] = mapMsg.data[k-1];
 
         }
     }
@@ -148,6 +153,48 @@ void mapPublisher(const ros::TimerEvent&){
 
     boundaryPub.publish(marker);
 
+    JPSPlan jps;
+    jps.set_map(map_unsigned, mapMsg.info.width, mapMsg.info.height,
+                mapMsg.info.origin.position.x, mapMsg.info.origin.position.y,
+                mapMsg.info.resolution);
+
+    unsigned int sX, sY, eX, eY;
+    // world 0
+    jps.worldToMap(0.05,0.,sX,sY);
+    jps.worldToMap(4.4,-1.,eX,eY);
+
+    // world 294
+    // jps.worldToMap(0.05,0.,sX,sY);
+    // jps.worldToMap(3.4,-.01,eX,eY);
+
+    jps.set_start(sX,sY);
+    jps.set_destination(eX,eY);
+    jps.set_occ_value(100);
+    jps.JPS();
+
+    std::vector<Eigen::Vector2d> jpsPath = jps.getPath(true);
+
+    ROS_INFO("path size is %lu", jpsPath.size());
+    nav_msgs::Path jpsMsg;
+    jpsMsg.header.stamp = ros::Time::now();
+    jpsMsg.header.frame_id = "map";
+
+    for(Eigen::Vector2d p : jpsPath){
+        geometry_msgs::PoseStamped pMsg;
+        pMsg.header = jpsMsg.header;
+        pMsg.pose.position.x = p(0);
+        pMsg.pose.position.y = p(1);
+        pMsg.pose.position.z = 0;
+        pMsg.pose.orientation.w = 1;
+        jpsMsg.poses.push_back(pMsg);
+        ROS_INFO("(%.2f,%.2f)", p(0), p(1));
+    }
+
+    jpsPub.publish(jpsMsg);
+
+    std::vector<Eigen::MatrixX4d> polys;
+    corridor::createCorridorBRS(jpsPath, mapMsg, boundary, polys);
+    corridor::visualizePolytope(polys, meshPub, edgePub);
 }
 
 void on_shutdown(int sig){
@@ -167,8 +214,15 @@ int main(int argc, char **argv){
 
     ros::Subscriber brsSub = nh.subscribe("/brsData", 100, &brscb);
     ros::Subscriber angleSub = nh.subscribe("/brsAngle", 1, &anglecb);
+
+    jpsPub = nh.advertise<nav_msgs::Path>("brsJPS", 0);
     gridPub = nh.advertise<nav_msgs::OccupancyGrid>("brsGrid", 0);
     boundaryPub = nh.advertise<visualization_msgs::Marker>("/brsBoundary", 0);
+
+    meshPub = 
+        nh.advertise<visualization_msgs::Marker>("/visualizer/meshBRS", 1000);
+    edgePub = 
+        nh.advertise<visualization_msgs::Marker>("/visualizer/edgeBRS", 1000);
 
     ros::Timer pubTimer = nh.createTimer(ros::Duration(1), &mapPublisher);
 

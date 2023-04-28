@@ -7,6 +7,7 @@
 #include <gcopter/geo_utils.hpp>
 
 #include <ros/ros.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <visualization_msgs/Marker.h>
 
@@ -500,6 +501,44 @@ namespace corridor{
 
         // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
         // exit(0);
+        bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
+            Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
+
+        if (!status)
+            return false;
+
+        shortCut(polys);
+        
+        return true;
+
+        // for(int i = 0; i < path.size()-1; i++){
+        //     polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));
+        // }
+        
+        // std::vector<Eigen::MatrixX4d> ret = simplifyCorridor(polys);
+        // return ret;
+        // shortCut(polys);
+        // return polys;
+    }
+
+    inline bool createCorridorBRS(
+        const std::vector<Eigen::Vector2d>& path, const nav_msgs::OccupancyGrid& mapMsg,
+        const std::vector<Eigen::Vector2d>& obs, std::vector<Eigen::MatrixX4d>& polys){
+
+        polys.clear();
+        std::vector<Eigen::Vector3d> path3d, obs3d;
+        for(Eigen::Vector2d p : path){
+            path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
+        }
+
+        for(Eigen::Vector2d ob : obs)
+            obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
+
+        double x = mapMsg.info.origin.position.x;
+        double y = mapMsg.info.origin.position.y;
+        double w = mapMsg.info.width;
+        double h = mapMsg.info.height;
+
         bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
             Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
 
