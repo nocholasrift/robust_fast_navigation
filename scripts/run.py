@@ -59,16 +59,16 @@ if __name__ == "__main__":
     ## 0. Launch Gazebo Simulation
     ##########################################################################################
     
-    # os.environ["JACKAL_LASER"] = "1"
-    # os.environ["JACKAL_LASER_MODEL"] = "ust10"
-    # os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
+    os.environ["JACKAL_LASER"] = "1"
+    os.environ["JACKAL_LASER_MODEL"] = "ust10"
+    os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
 
     rospack = rospkg.RosPack()
-    base_path = rospack.get_path('jackal_gazebo')
+    base_path = rospack.get_path('jackal_helper')
     world_name = "BARN/world_%d.world" %(args.world_idx)
     print(">>>>>>>>>>>>>>>>>> Loading Gazebo Simulation with %s <<<<<<<<<<<<<<<<<<" %(world_name))   
     
-    launch_file = join(base_path, 'launch', 'barn_world.launch')
+    launch_file = join(base_path, 'launch', 'gazebo_launch.launch')
     world_name = join(base_path, "worlds", world_name)
 
     gazebo_process = subprocess.Popen([
