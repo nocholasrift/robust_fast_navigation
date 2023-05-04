@@ -48,10 +48,10 @@
     <param name="particles" value="10"/>
 
 <!-- Initial map size  -->
-    <param name="xmin" value="-10.0"/>
-    <param name="ymin" value="-10.0"/>
-    <param name="xmax" value="10.0"/>
-    <param name="ymax" value="10.0"/>
+    <param name="xmin" value="-12.0"/>
+    <param name="ymin" value="-12.0"/>
+    <param name="xmax" value="12.0"/>
+    <param name="ymax" value="12.0"/>
 
     <!-- Processing parameters (resolution of the map)  -->
     <param name="delta" value="0.05"/>

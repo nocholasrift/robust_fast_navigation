@@ -12,7 +12,7 @@ import rospkg
 from gazebo_simulation import GazeboSimulation
 
 INIT_POSITION = [-2, 3, 1.57]  # in world frame
-GOAL_POSITION = [8.5,0]  # relative to the initial position
+GOAL_POSITION = [10.0,0]  # relative to the initial position
 
 bag_process = None
 gazebo_process = None
@@ -59,9 +59,9 @@ if __name__ == "__main__":
     ## 0. Launch Gazebo Simulation
     ##########################################################################################
     
-    # os.environ["JACKAL_LASER"] = "1"
-    # os.environ["JACKAL_LASER_MODEL"] = "ust10"
-    # os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
+    os.environ["JACKAL_LASER"] = "1"
+    os.environ["JACKAL_LASER_MODEL"] = "ust10"
+    os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
 
     rospack = rospkg.RosPack()
     base_path = rospack.get_path('jackal_gazebo')
@@ -87,7 +87,8 @@ if __name__ == "__main__":
     gazebo_sim = GazeboSimulation(init_position=INIT_POSITION)
     
     init_coor = (INIT_POSITION[0], INIT_POSITION[1])
-    goal_coor = (INIT_POSITION[0] + GOAL_POSITION[0], INIT_POSITION[1] + GOAL_POSITION[1])
+    # due to map / world transform, flip goal_pos coords...
+    goal_coor = (INIT_POSITION[0] + GOAL_POSITION[1], INIT_POSITION[1] + GOAL_POSITION[0])
     
     pos = gazebo_sim.get_model_state().pose.position
     curr_coor = (pos.x, pos.y)
@@ -205,9 +206,10 @@ if __name__ == "__main__":
     if planner_process.poll() is not None or prog_crash:
         collided = True
     
-    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < timeout_time and curr_coor[1] < 10:
+    while compute_distance(goal_coor, curr_coor) > 1 and not collided and curr_time - start_time < timeout_time:
         curr_time = rospy.get_time()
         pos = gazebo_sim.get_model_state().pose.position
+
         curr_coor = (pos.x, pos.y)
         print("Time: %.2f (s), x: %.2f (m), y: %.2f (m)" %(curr_time - start_time, *curr_coor), end="\r")
         collided = gazebo_sim.get_hard_collision()
