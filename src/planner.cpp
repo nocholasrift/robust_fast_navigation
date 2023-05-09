@@ -35,6 +35,7 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/const_factor", _const_factor, 6.0);
     nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
+    nh.param("robust_planner/is_barn", _is_barn, false);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
     // Publishers 
@@ -258,28 +259,12 @@ void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
 	_odom(1) = msg->pose.pose.position.y; 
 	_odom(2) = yaw;
 
-    // geometry_msgs::PoseStamped globalPos;
-    // if(global_costmap->getRobotPose(globalPos)){
-    //     tf::Quaternion q(
-    //         msg->pose.pose.orientation.x,
-    //         msg->pose.pose.orientation.y,
-    //         msg->pose.pose.orientation.z,
-    //         msg->pose.pose.orientation.w
-    //     );
-    //     tf::Matrix3x3 m(q);
-    //     double roll, pitch, yaw;
-    //     m.getRPY(roll, pitch, yaw);
-
-    //     _odom = Eigen::VectorXd(3);
-    //     _odom(0) = globalPos.pose.position.x;
-    //     _odom(1) = globalPos.pose.position.y;
-    //     _odom(2) = yaw;
-    // }
-
-    // _vel = Eigen::VectorXd(3);
-    // _vel(0) = msg->twist.twist.linear.x*cos(yaw);
-    // _vel(1) = msg->twist.twist.linear.x*sin(yaw);
-    // _vel(2) = 0;
+    if (_is_barn && !_is_goal_set){
+        goal = Eigen::VectorXd(2);
+        goal(0) = 10*cos(yaw);
+        goal(1) = 10*sin(yaw);
+        _is_goal_set = true;
+    }
 
     _prevOdom = _odom;
     _is_init = true;

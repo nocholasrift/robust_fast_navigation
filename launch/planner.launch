@@ -31,6 +31,7 @@
         <!-- How far out in distance the planner will generate a trajectory -->
         <param name="max_dist_horizon" value="4" />
 
+        <param name="is_barn" value="true" />
         <!-- <remap from="/planner_goal" to="/move_base_simple/goal" /> -->
         <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
         <remap from="/planner_goal" to="/final_goal" />

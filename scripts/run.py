@@ -87,7 +87,6 @@ if __name__ == "__main__":
     gazebo_sim = GazeboSimulation(init_position=INIT_POSITION)
     
     init_coor = (INIT_POSITION[0], INIT_POSITION[1])
-    # due to map / world transform, flip goal_pos coords...
     goal_coor = (INIT_POSITION[0] + GOAL_POSITION[0], INIT_POSITION[1] + GOAL_POSITION[1])
     
     pos = gazebo_sim.get_model_state().pose.position
@@ -165,14 +164,14 @@ if __name__ == "__main__":
 
     goal_pub = rospy.Publisher("/final_goal", PoseStamped, queue_size=1, latch=True)
     mb_goal = PoseStamped()
-    mb_goal.header.frame_id = 'map'
+    mb_goal.header.frame_id = 'odom'
     mb_goal.header.stamp = rospy.Time.now()
     mb_goal.pose.position.x = GOAL_POSITION[0]
     mb_goal.pose.position.y = GOAL_POSITION[1]
     mb_goal.pose.position.z = 0
     mb_goal.pose.orientation = Quaternion(0, 0, 0, 1)
 
-    goal_pub.publish(mb_goal)
+    # goal_pub.publish(mb_goal)
 
 
     ##########################################################################################
