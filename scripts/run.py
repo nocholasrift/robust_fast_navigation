@@ -149,7 +149,7 @@ if __name__ == "__main__":
         'roslaunch',
         nav_stack_launch_file,
     ])
-    time.sleep(1)
+    time.sleep(3)
 
     planner_launch_file = join(planner_path, 'launch/planner.launch')
     planner_process = subprocess.Popen([

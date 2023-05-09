@@ -750,7 +750,6 @@ bool Planner::plan(bool is_failsafe){
 
         double startTime = (trajInd-startInd)*_traj_dt;
 
-
         for(int i = 0; i < bTraj.points.size(); i++){
             aTraj.points.push_back(bTraj.points[i]);
             aTraj.points.back().time_from_start = ros::Duration(startTime+i*_traj_dt);
