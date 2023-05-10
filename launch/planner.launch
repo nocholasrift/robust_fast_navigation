@@ -12,7 +12,7 @@
         <!-- How far ahead in time the planner will look to grab the initial pos -->
         <param name="lookahead" value=".35" />
         <!-- Divide speeds in trajectory by this number, this is how speed is controlled -->
-        <param name="const_factor" value="6" />
+        <param name="const_factor" value="5" />
         <!-- Plan without sending anything to external tracker -->
         <param name="teleop" value="false" />
         <!-- Plan once and then exit, useful for debugging -->
