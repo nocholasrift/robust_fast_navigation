@@ -70,6 +70,9 @@ Planner::Planner(ros::NodeHandle& nh){
     currPolyPub = 
         nh.advertise<geometry_msgs::PoseArray>("/currPoly", 0);
 
+    corridorPub = 
+        nh.advertise<geometry_msgs::PoseArray>("/polyCorridor", 0);
+
     intGoalPub = 
         nh.advertise<geometry_msgs::PoseArray>("/intermediate_goal", 0);
 
@@ -134,7 +137,91 @@ void Planner::spin(){
   RVIZ. When called, this function will set the _is_goal_set field to 
   true, which is required for planning to begin.
 
-  Inputs:
+  Inputs:// Due to the fact that H-representation cannot be directly visualized
+        // We first conduct vertex enumeration of them, then apply quickhull
+        // to obtain triangle meshs of polyhedra
+        Eigen::Matrix3Xd mesh(3, 0), curTris(3, 0), oldTris(3, 0);
+        for (size_t id = 0; id < hPolys.size(); id++)
+        {
+            oldTris = mesh;
+            Eigen::Matrix<double, 3, -1, Eigen::ColMajor> vPoly;
+            geo_utils::enumerateVs(expandPoly(hPolys[id],.05), vPoly);
+
+            quickhull::QuickHull<double> tinyQH;
+            const auto polyHull = tinyQH.getConvexHull(vPoly.data(), vPoly.cols(), false, true);
+            const auto &idxBuffer = polyHull.getIndexBuffer();
+            int hNum = idxBuffer.size() / 3;
+
+            curTris.resize(3, hNum * 3);
+            for (int i = 0; i < hNum * 3; i++)
+            {
+                curTris.col(i) = vPoly.col(idxBuffer[i]);
+            }
+            mesh.resize(3, oldTris.cols() + curTris.cols());
+            mesh.leftCols(oldTris.cols()) = oldTris;
+            mesh.rightCols(curTris.cols()) = curTris;
+        }
+
+        // RVIZ support tris for visualization
+        visualization_msgs::Marker meshMarker, edgeMarker;
+
+        meshMarker.id = 0;
+        meshMarker.header.stamp = ros::Time::now();
+        meshMarker.header.frame_id = "map";
+        meshMarker.pose.orientation.w = 1.00;
+        meshMarker.action = visualization_msgs::Marker::ADD;
+        meshMarker.type = visualization_msgs::Marker::TRIANGLE_LIST;
+        meshMarker.ns = "mesh";
+        
+        meshMarker.color.r = 0.675;
+        meshMarker.color.g = 0.988;
+        meshMarker.color.b = .851;
+
+        meshMarker.color.a = 0.15;
+        meshMarker.scale.x = 1.0;
+        meshMarker.scale.y = 1.0;
+        meshMarker.scale.z = 1.0;
+
+        edgeMarker = meshMarker;
+        edgeMarker.type = visualization_msgs::Marker::LINE_LIST;
+        edgeMarker.ns = "edge";
+        edgeMarker.color.r = 0.365;
+        edgeMarker.color.g = 0.851;
+        edgeMarker.color.b = 0.757;
+        edgeMarker.color.a = 1.00;
+        edgeMarker.scale.x = 0.02;
+
+        geometry_msgs::Point point;
+
+        int ptnum = mesh.cols();
+
+        for (int i = 0; i < ptnum; i++)
+        {
+            point.x = mesh(0, i);
+            point.y = mesh(1, i);
+            point.z = mesh(2, i);
+            meshMarker.points.push_back(point);
+        }
+
+        for (int i = 0; i < ptnum / 3; i++)
+        {
+            for (int j = 0; j < 3; j++)
+            {
+                point.x = mesh(0, 3 * i + j);
+                point.y = mesh(1, 3 * i + j);
+                point.z = mesh(2, 3 * i + j);
+                edgeMarker.points.push_back(point);
+                point.x = mesh(0, 3 * i + (j + 1) % 3);
+                point.y = mesh(1, 3 * i + (j + 1) % 3);
+                point.z = mesh(2, 3 * i + (j + 1) % 3);
+                edgeMarker.points.push_back(point);
+            }
+        }
+
+        meshPub.publish(meshMarker);
+        edgePub.publish(edgeMarker);
+
+        return;
     - PointStamped message
 ***********************************************************************/
 void Planner::clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg){
@@ -555,7 +642,8 @@ bool Planner::plan(bool is_failsafe){
 
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
-    _map->worldToMap(initialPVA.col(0)[0], initialPVA.col(0)[1], sX, sY);
+    _map->worldToMap(_odom(0), _odom(1), sX, sY);
+    // _map->worldToMap(initialPVA.col(0)[0], initialPVA.col(0)[1], sX, sY);
     _map->worldToMap(goal(0), goal(1), eX, eY);
 
     jps.set_start(sX, sY);
@@ -582,6 +670,7 @@ bool Planner::plan(bool is_failsafe){
         if (i > 0)
             cost += (jpsPath[i]-jpsPath[i-1]).norm();
     }
+    // jpsPath.insert(jpsPath.begin(), Eigen::Vector2d(_odom(0), _odom(1)));
 
     // bool _is_old_jps_valid = true;
 
@@ -772,7 +861,9 @@ bool Planner::plan(bool is_failsafe){
     if(!_is_teleop)
         trajPub.publish(sentTraj);
 
+    ROS_INFO("visualizing");
     visualizeTraj();
+    pubCurrPoly();
 
     if (_plan_once){
         pubPolys();
@@ -909,6 +1000,51 @@ void Planner::pubPolys(){
     wptMsgs.poses.push_back(pM);
 
     intGoalPub.publish(wptMsgs);
-    currPolyPub.publish(msg);
+    corridorPub.publish(msg);
+    
+    return;
+}
 
+void Planner::pubCurrPoly(){
+
+    geometry_msgs::PoseArray msg;
+    
+    // go backwards because we want the poly closest to end of corridor in
+    // case of intersections
+    for(int i = hPolys.size()-1; i >=0; i--){
+        Eigen::MatrixX4d poly = hPolys[i];
+
+        if (isInPoly(poly, Eigen::Vector2d(_odom(0), _odom(1)))){
+            for(int j = 0; j < poly.rows(); j++){
+                geometry_msgs::Pose p;
+                p.orientation.x = poly.row(j)[0];
+                p.orientation.y = poly.row(j)[1];
+                p.orientation.z = poly.row(j)[2];
+                p.orientation.w = poly.row(j)[3];
+                msg.poses.push_back(p);
+            }
+
+            ROS_INFO("PUBLISHING POLY");
+            currPolyPub.publish(msg);
+            break;
+        }
+    }
+
+    // costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
+    // Eigen::MatrixX4d poly = corridor::genPoly(*_map, _odom(0), _odom(1), _obs);
+    // if (isInPoly(poly, Eigen::Vector2d(_odom(0), _odom(1)))){
+    //     for(int i = 0; i < poly.rows(); i++){
+    //         geometry_msgs::Pose p;
+    //         p.orientation.x = poly.row(i)[0];
+    //         p.orientation.y = poly.row(i)[1];
+    //         p.orientation.z = poly.row(i)[2];
+    //         p.orientation.w = poly.row(i)[3];
+    //         msg.poses.push_back(p);
+    //     }
+
+    //     ROS_INFO("PUBLISHING POLY");
+    //     currPolyPub.publish(msg);
+    // }
+
+    return;
 }

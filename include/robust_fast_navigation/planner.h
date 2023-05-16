@@ -50,6 +50,7 @@ private:
     
     // utilities
     void pubPolys();
+    void pubCurrPoly();
     void projectIntoMap(const Eigen::Vector2d& goal);
 
     template <int D>
@@ -70,7 +71,8 @@ private:
     ros::Timer controlTimer, goalTimer, publishTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, intGoalPub,
-    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub;
+    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub,
+    corridorPub;
 
     costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
     std::vector<Eigen::Vector2d> astarPath;
