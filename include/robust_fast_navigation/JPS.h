@@ -38,8 +38,8 @@ public:
 
     std::vector<Eigen::Vector2d> getPath(bool simplify = true);
     std::vector<Eigen::Vector2d> simplifyPath(const std::vector<Eigen::Vector2d>& path);
-    bool isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, 
-                    double max_range=1e6, bool map_coords=true);
+    bool worldToMap(double x, double y, unsigned int& mx, unsigned int& my);
+    void mapToWorld(unsigned int mx, unsigned int my, double& x, double& y);
 
 
 private:
@@ -55,7 +55,8 @@ private:
 
     bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
         int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term);
-    bool worldToMap(double x, double y, unsigned int& mx, unsigned int& my);
+    bool isBlocked(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2, 
+                    double max_range=1e6, bool map_coords=true);
 
 
     std::map<int, bool> closedSet;

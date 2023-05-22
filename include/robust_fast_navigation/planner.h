@@ -61,7 +61,8 @@ private:
     vec_Vec2f _obs;
 
     bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset,
-         _plan_once, _simplify_jps, _is_costmap_started, _map_received, _is_barn;
+         _plan_once, _simplify_jps, _is_costmap_started, _map_received, _is_barn, 
+         _plan_in_free, _planned;
 
     std::string _frame_str;
 
@@ -71,8 +72,9 @@ private:
     ros::Timer controlTimer, goalTimer, publishTimer;
     ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
     ros::Publisher trajVizPub, wptVizPub, trajPub, trajPubNoReset, meshPub, intGoalPub,
-    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPointsPub, currPolyPub, initPointPub,
-    corridorPub;
+    
+    edgePub, goalPub, paddedLaserPub, jpsPub, jpsPubFree, jpsPointsPub, currPolyPub, 
+    initPointPub, corridorPub;
 
     costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
     std::vector<Eigen::Vector2d> astarPath;
@@ -84,7 +86,7 @@ private:
 
     const double JACKAL_MAX_VEL = 1.0;
     double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, 
-    _prev_jps_cost;
+    _prev_jps_cost, _max_dist_horizon;
 
     int _failsafe_count;
 

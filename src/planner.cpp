@@ -30,12 +30,14 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/planner_frequency", _dt, .1);
-    nh.param("robust_planner/max_velocity", _max_vel, 1.0);
+    nh.param("robust_planner/max_velocity", _max_vel, 1.);
     nh.param("robust_planner/plan_once", _plan_once, false);
-    nh.param("robust_planner/const_factor", _const_factor, 6.0);
+    nh.param("robust_planner/const_factor", _const_factor, 6.);
     nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
     nh.param("robust_planner/is_barn", _is_barn, false);
+    nh.param("robust_planner/plan_in_free", _plan_in_free, false);
+    nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
 
     // Publishers 
@@ -63,6 +65,8 @@ Planner::Planner(ros::NodeHandle& nh){
 
     jpsPub = 
         nh.advertise<nav_msgs::Path>("/jpsPath", 0);
+    jpsPubFree = 
+        nh.advertise<nav_msgs::Path>("/jpsPathFree", 0);
 
     jpsPointsPub = 
         nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
@@ -90,6 +94,7 @@ Planner::Planner(ros::NodeHandle& nh){
     controlTimer = nh.createTimer(ros::Duration(_dt), &Planner::controlLoop, this);
 
     _is_init = false;
+    _planned = false;
     _is_goal_set = false;
 
     _map_received = false;
@@ -530,8 +535,6 @@ void Planner::controlLoop(const ros::TimerEvent&){
 
     static int count = 0;
 
-    
-
     if (!_is_init || !_is_goal_set || !_is_costmap_started)
         return;
 
@@ -549,7 +552,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
     global_costmap->updateMap();
 
     // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
-    
+    if (_planned)
+        return;
+        
     if (!plan())
         count++;
     else
@@ -661,16 +666,16 @@ bool Planner::plan(bool is_failsafe){
         return false;
     }
 
-    double cost = 0;
-    for(int i = 0; i < jpsPath.size(); i++){
-        double x, y;
-        _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
-        jpsPath[i] = Eigen::Vector2d(x,y);
+    // double cost = 0;
+    // for(int i = 0; i < jpsPath.size(); i++){
+    //     double x, y;
+    //     _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
+    //     jpsPath[i] = Eigen::Vector2d(x,y);
 
-        if (i > 0)
-            cost += (jpsPath[i]-jpsPath[i-1]).norm();
-    }
     // jpsPath.insert(jpsPath.begin(), Eigen::Vector2d(_odom(0), _odom(1)));
+    //     if (i > 0)
+    //         cost += (jpsPath[i]-jpsPath[i-1]).norm();
+    // }
 
     // bool _is_old_jps_valid = true;
 
@@ -706,6 +711,7 @@ bool Planner::plan(bool is_failsafe){
     nav_msgs::Path jpsMsg;
     jpsMsg.header.stamp = ros::Time::now();
     jpsMsg.header.frame_id = _frame_str;
+
     for(Eigen::Vector2d p : jpsPath){
         geometry_msgs::PoseStamped pMsg;
         pMsg.header = jpsMsg.header;
@@ -718,6 +724,57 @@ bool Planner::plan(bool is_failsafe){
     }
 
     jpsPub.publish(jpsMsg);
+
+    Eigen::Vector2d goalPoint;
+    if (_plan_in_free){
+
+        nav_msgs::Path jpsMsgFree;
+        jpsMsgFree.header.stamp = ros::Time::now();
+        jpsMsgFree.header.frame_id = _frame_str;
+        std::vector<Eigen::Vector2d> jpsFree = getJPSInFree(jpsPath, *_map);
+        ROS_INFO("jpsFree size: %lu", jpsFree.size());
+
+        for(Eigen::Vector2d p : jpsFree){
+            geometry_msgs::PoseStamped pMsg;
+            pMsg.header = jpsMsgFree.header;
+            pMsg.pose.position.x = p(0);
+            pMsg.pose.position.y = p(1);
+            pMsg.pose.position.z = 0;
+            pMsg.pose.orientation.w = 1;
+            jpsMsgFree.poses.push_back(pMsg);
+            
+        }
+
+        jpsPubFree.publish(jpsMsgFree);
+
+        finalPVA << Eigen::Vector3d(jpsFree.back()[0],jpsFree.back()[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+
+        if (jpsFree.size() == 0){
+            ROS_ERROR("JPSFree has size 0");
+            return false;
+        }
+
+        jpsPath = jpsFree;
+    } else {
+        std::vector<Eigen::Vector2d> newJPSPath;
+        if (getJPSIntersectionWithSphere(
+            jpsPath, 
+            newJPSPath,
+            Eigen::Vector2d(_odom[0], _odom[1]),
+            _max_dist_horizon, goalPoint)){
+
+            jpsPath = newJPSPath;
+
+            finalPVA << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+        } else{
+            ROS_WARN("JPS path did not intersect circle around robot");
+        }
+
+    }
 
     /*************************************
     ********* GENERATE POLYTOPES *********
@@ -754,14 +811,14 @@ bool Planner::plan(bool is_failsafe){
     magnitudeBounds(0) = 1.8;   //v_max
     magnitudeBounds(1) = .8;   //omg_max
     magnitudeBounds(2) = .8;    //theta_max
-    magnitudeBounds(3) = -1;     //thrust_min
-    magnitudeBounds(4) = .2;    //thrust_max
+    magnitudeBounds(3) = 2;     //thrust_min
+    magnitudeBounds(4) = 12;    //thrust_max
     penaltyWeights(0) = 1e4;    //pos_weight
     penaltyWeights(1) = 1e4;    //vel_weight
     penaltyWeights(2) = 1e4;    //omg_weight
     penaltyWeights(3) = 1e4;    //theta_weight
     penaltyWeights(4) = 1e5;    //thrust_weight
-    physicalParams(0) = .1;    // mass
+    physicalParams(0) = 100;    // mass
     physicalParams(1) = 9.81;   // gravity
     physicalParams(2) = 0;      // drag
     physicalParams(3) = 0;      // drag
@@ -867,7 +924,7 @@ bool Planner::plan(bool is_failsafe){
 
     if (_plan_once){
         pubPolys();
-        exit(0);
+        _planned = true;
     }
 
     double totalT = (ros::Time::now() - a).toSec();

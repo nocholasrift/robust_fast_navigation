@@ -12,7 +12,7 @@
         <!-- How far ahead in time the planner will look to grab the initial pos -->
         <param name="lookahead" value=".35" />
         <!-- Divide speeds in trajectory by this number, this is how speed is controlled -->
-        <param name="const_factor" value="5" />
+        <param name="const_factor" value="7" />
         <!-- Plan without sending anything to external tracker -->
         <param name="teleop" value="false" />
         <!-- Plan once and then exit, useful for debugging -->
@@ -29,9 +29,10 @@
         <!-- Plan only within free space, doesn't work very well... -->
         <param name="plan_in_free" value="false" />
         <!-- How far out in distance the planner will generate a trajectory -->
-        <param name="max_dist_horizon" value="4" />
+        <param name="max_dist_horizon" value="50" />
 
         <param name="is_barn" value="true" />
+
         <remap from="/planner_goal" to="/move_base_simple/goal" />
         <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
         <!-- <remap from="/planner_goal" to="/final_goal" /> -->
@@ -42,3 +43,6 @@
     <!-- <include file="$(find gap_detection)/launch/gap_detection.launch" /> -->
     <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
 </launch>
+
+
+<!-- World 285 is interesting for CBFs -->

@@ -12,7 +12,7 @@ import rospkg
 from gazebo_simulation import GazeboSimulation
 
 INIT_POSITION = [-2, 3, 1.57]  # in world frame
-GOAL_POSITION = [0,10.0]  # relative to the initial position
+GOAL_POSITION = [10.0,0]  # relative to the initial position
 
 bag_process = None
 gazebo_process = None
@@ -87,7 +87,8 @@ if __name__ == "__main__":
     gazebo_sim = GazeboSimulation(init_position=INIT_POSITION)
     
     init_coor = (INIT_POSITION[0], INIT_POSITION[1])
-    goal_coor = (INIT_POSITION[0] + GOAL_POSITION[0], INIT_POSITION[1] + GOAL_POSITION[1])
+    # due to map / world transform, flip goal_pos coords...
+    goal_coor = (INIT_POSITION[0] + GOAL_POSITION[1], INIT_POSITION[1] + GOAL_POSITION[0])
     
     pos = gazebo_sim.get_model_state().pose.position
     curr_coor = (pos.x, pos.y)

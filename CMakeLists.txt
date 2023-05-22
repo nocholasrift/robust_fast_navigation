@@ -49,7 +49,7 @@ target_link_libraries(robust_planner
   Eigen3::Eigen
 )
 
-add_executable(brs_manager src/BRSManager.cpp)
+add_executable(brs_manager src/BRSManager.cpp src/JPS.cpp)
 target_link_libraries(brs_manager
   ${catkin_LIBRARIES}
   Eigen3::Eigen

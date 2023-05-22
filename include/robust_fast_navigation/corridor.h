@@ -7,6 +7,7 @@
 #include <gcopter/geo_utils.hpp>
 
 #include <ros/ros.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <visualization_msgs/Marker.h>
 
@@ -99,73 +100,6 @@ namespace corridor{
         return true;
     }
 
-    // following bresenham / raycast method taken with <3 from https://docs.ros.org/en/api/costmap_2d/html/costmap__2d_8h_source.html
-    inline void bresenham(const costmap_2d::Costmap2D& _map, unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
-        int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term){
-        
-        unsigned int end = std::min(max_range, abs_da);
-        unsigned int mx, my;
-        for (unsigned int i = 0; i < end; ++i) {
-            offset += offset_a;
-            error_b += abs_db;
-            
-            _map.indexToCells(offset, mx, my);
-            if (_map.getCost(mx, my) != costmap_2d::FREE_SPACE){
-                break;
-            }
-
-            if ((unsigned int)error_b >= abs_da) {
-                offset += offset_b;
-                error_b -= abs_da;
-            }
-
-            _map.indexToCells(offset, mx, my);
-            if (_map.getCost(mx, my) != costmap_2d::FREE_SPACE){
-                break;
-            }
-        }
-        
-        term = offset;
-    }
-
-
-    inline void raycast(const costmap_2d::Costmap2D& _map, unsigned int sx, unsigned int sy, 
-        unsigned int ex, unsigned int ey, double &x, double &y,
-        unsigned int max_range = 1e6){
-        
-        unsigned int size_x = _map.getSizeInCellsX();
-
-        int dx = ex - sx;
-        int dy = ey - sy;
-
-        unsigned int abs_dx = abs(dx);
-        unsigned int abs_dy = abs(dy);
-        
-        int offset_dx = dx > 0 ? 1 : -1;
-        int offset_dy = (dy > 0 ? 1 : -1) * size_x;
-
-        unsigned int offset = sy * size_x + sx;
-
-        double dist = hypot(dx, dy);
-        double scale = (dist == 0.0) ? 1.0 : std::min(1.0, max_range / dist);
-
-        unsigned int term; 
-        if (abs_dx >= abs_dy){
-            int error_y = abs_dx / 2;
-            bresenham(_map, abs_dx, abs_dy, error_y, offset_dx, offset_dy, 
-                    offset, (unsigned int)(scale * abs_dx), term);
-        } else{
-            int error_x = abs_dy / 2;
-            bresenham(_map, abs_dy, abs_dx, error_x, offset_dy, offset_dx,
-                    offset, (unsigned int)(scale * abs_dy), term);
-        }
-
-        // convert costmap index to world coordinates
-        unsigned int mx, my;
-        _map.indexToCells(term, mx, my);
-        _map.mapToWorld(mx, my, x, y);
-    }
-
     inline Eigen::MatrixX4d getHyperPlanes(const Polyhedron<2>& poly, const Eigen::Vector2d& seed){
         
         vec_E<Hyperplane<2> > planes = poly.vs_;
@@ -228,7 +162,7 @@ namespace corridor{
             if (!_map.worldToMap(ob[0], ob[1], ex, ey))
                 continue;
 
-            corridor::raycast(_map, sx,sy,ex,ey,x,y);
+            raycast(_map, sx,sy,ex,ey,x,y);
             paddedObs.push_back(Vec2f(x,y));
          
         }
@@ -339,7 +273,8 @@ namespace corridor{
         {
             oldTris = mesh;
             Eigen::Matrix<double, 3, -1, Eigen::ColMajor> vPoly;
-            geo_utils::enumerateVs(expandPoly(hPolys[id],.05), vPoly);
+            // geo_utils::enumerateVs(expandPoly(hPolys[id],.05), vPoly);
+            geo_utils::enumerateVs(hPolys[id], vPoly);
 
             quickhull::QuickHull<double> tinyQH;
             const auto polyHull = tinyQH.getConvexHull(vPoly.data(), vPoly.cols(), false, true);
@@ -417,8 +352,6 @@ namespace corridor{
 
         return;
     }
-
-
 
 
     inline std::vector<Eigen::MatrixX4d> 
@@ -571,6 +504,44 @@ namespace corridor{
 
         // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
         // exit(0);
+        bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
+            Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
+
+        if (!status)
+            return false;
+
+        shortCut(polys);
+        
+        return true;
+
+        // for(int i = 0; i < path.size()-1; i++){
+        //     polys.push_back(genPolyJPS(_map, path[i], path[i+1], _obs));
+        // }
+        
+        // std::vector<Eigen::MatrixX4d> ret = simplifyCorridor(polys);
+        // return ret;
+        // shortCut(polys);
+        // return polys;
+    }
+
+    inline bool createCorridorBRS(
+        const std::vector<Eigen::Vector2d>& path, const nav_msgs::OccupancyGrid& mapMsg,
+        const std::vector<Eigen::Vector2d>& obs, std::vector<Eigen::MatrixX4d>& polys){
+
+        polys.clear();
+        std::vector<Eigen::Vector3d> path3d, obs3d;
+        for(Eigen::Vector2d p : path){
+            path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
+        }
+
+        for(Eigen::Vector2d ob : obs)
+            obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
+
+        double x = mapMsg.info.origin.position.x;
+        double y = mapMsg.info.origin.position.y;
+        double w = mapMsg.info.width;
+        double h = mapMsg.info.height;
+
         bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
             Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
 
