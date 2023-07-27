@@ -2,15 +2,15 @@
 
     <arg name="barn" default="false" />
     <arg name="barn_dist" default="10.0" />
+    <arg name="max_vel" default="1.2" />
 
     <!-- <arg name="save_corridors" value="true" /> -->
-    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" output="screen">
-    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" > -->
-    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner" 
+    <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner_gurobi" output="screen">
+    <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner_gurobi" 
           launch-prefix="lldb" output="screen">  -->
         
         <!-- Max velocity for planner to execute. Doesn't currently work -->
-        <param name="max_velocity" value="1" />
+        <param name="max_velocity" value="$(arg max_vel)" />
         <!-- How frequently the planner loop runs in seconds -->
         <param name="planner_frequency" value=".2" />
         <!-- How far ahead in time the planner will look to grab the initial pos -->
@@ -35,6 +35,8 @@
         <!-- How far out in distance the planner will generate a trajectory -->
         <param name="max_dist_horizon" value="5" />
 
+        <param name="enable_recovery" value="true" />
+
         <param name="is_barn" value="$(arg barn)" />
         <param name="barn_goal_dist" value="$(arg barn_dist)" />
 
@@ -44,14 +46,10 @@
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 
-    <!-- <include file="$(find barn_challenge)/launch/barn_nav.launch" />  -->
-    <!-- <include file="$(find gap_detection)/launch/gap_detection.launch" /> -->
     <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
-    
-    <!-- <group if="$(arg save_corridors)">
-        <node name="corridor_viz" pkg="robust_fast_navigation" type="corridor_viz.py" output="screen" />
-    </group> -->
+
+    <node name="trail_viz" pkg="robust_fast_navigation" type="trail_viz.py" output="screen" >
+        <param name="max_velocity" value="$(arg max_vel)" />
+    </node>
+
 </launch>
-
-
-<!-- World 285 is interesting for CBFs -->

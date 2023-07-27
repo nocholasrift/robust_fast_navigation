@@ -115,6 +115,7 @@ class potential_field:
             msg.angular.z = np.clip(self.cmd.angular.z 
                                     + .15 * (math.atan2(vector_sum[1], vector_sum[0])-yaw_r),
                                     -np.pi, np.pi)
+            
             self.cmd_pub.publish(msg)
 
 #------------------------------------------

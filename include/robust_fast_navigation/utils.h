@@ -5,11 +5,25 @@
 #include <iostream>
 #include <Eigen/Eigen>
 
+#include <geometry_msgs/PoseArray.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <trajectory_msgs/JointTrajectory.h>
 
 #include <decomp_basis/data_type.h>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+
+
+// struct SolverState{
+//     nav_msgs::Path jpsPath;
+//     geometry_msgs::PoseArray polys;
+
+//     Eigen::Matrix3d initialPVA, finalPVA;
+
+//     bool solved;
+// };
 
 /**********************************************************************
     This function takes in a polygon and shifts all hyperplanes outward
@@ -380,5 +394,26 @@ bool getJPSIntersectionWithSphere(
     return false;
     
 }
+
+Eigen::MatrixX2d getVertices(const Eigen::MatrixX4d& poly){
+    Eigen::MatrixX2d ret(poly.rows(), 2);
+
+    for(int i = 0; i < poly.rows(); i++){
+        // if()
+    }
+
+    return ret;
+}
+
+bool getPolyIntersection(const Eigen::MatrixX4d& poly1, const Eigen::MatrixX4d& poly2, Eigen::MatrixX4d& polyOut){
+    // using namespace boost::assign;
+    typedef boost::geometry::model::d2::point_xy<double> point_xy;
+
+
+    return true;
+}
+
+
+
 
 #endif

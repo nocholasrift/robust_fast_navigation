@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 
-
 #include <tf/tf.h>
 #include <std_msgs/Bool.h>
 #include <tf2_ros/buffer.h>
@@ -12,11 +11,10 @@
 #include <geometry_msgs/PoseArray.h>
 #include <tf2_ros/transform_listener.h>
 
-
 #include <robust_fast_navigation/JPS.h>
 #include <robust_fast_navigation/utils.h>
 #include <robust_fast_navigation/spline.h>
-#include <robust_fast_navigation/planner.h>
+#include <robust_fast_navigation/planner_gurobi.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/tinycolormap.hpp>
 
@@ -41,6 +39,7 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/barn_goal_dist", _barn_goal_dist, 10.);
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
+    nh.param("robust_planner/enable_recovery", _enable_recovery, true);
 
     // Publishers 
     trajVizPub = 
@@ -94,29 +93,70 @@ Planner::Planner(ros::NodeHandle& nh){
     solverStatePub = 
         nh.advertise<robust_fast_navigation::SolverState>("/solverState", 0);
 
+    cmdVelPub = 
+        nh.advertise<geometry_msgs::Twist>("/cmd_vel", 0);
+
     // Subscribers
     mapSub = nh.subscribe("/map", 1, &Planner::mapcb, this);
     goalSub = nh.subscribe("/planner_goal", 1, &Planner::goalcb, this);
     laserSub = nh.subscribe("/front/scan", 1, &Planner::lasercb, this);
     odomSub = nh.subscribe("/odometry/filtered", 1, &Planner::odomcb, this);
+    occSub = nh.subscribe("/occ_points", 10, &Planner::occlusionPointscb, this);
     clickedPointSub = nh.subscribe("/clicked_point", 1, &Planner::clickedPointcb, this);
     pathSub = nh.subscribe("/global_planner/planner/plan", 1, &Planner::globalPathcb, this);
 
     // Timers
     goalTimer = nh.createTimer(ros::Duration(_dt/2.0), &Planner::goalLoop, this);
-    publishTimer = nh.createTimer(ros::Duration(_dt*2), &Planner::publishOccupied, this);
     controlTimer = nh.createTimer(ros::Duration(_dt), &Planner::controlLoop, this);
+    publishTimer = nh.createTimer(ros::Duration(_dt*2), &Planner::publishOccupied, this);
 
+    if (_enable_recovery)
+        primitiveTimer = nh.createTimer(ros::Duration(.01),&Planner::primitivesLoop, this);
+
+    _is_occ = false;
     _is_init = false;
     _planned = false;
     _is_goal_set = false;
-
     _map_received = false;
+    _primitive_started = false;
     _is_costmap_started = false;
+    
+    // atomics
+    _primitives_ready = false;
+    _generate_primitives = false;
+
+    _robo_state = NOMINAL;
 
     _prev_jps_cost = -1;
 
     ROS_INFO("Initialized planner!");
+
+    double limits[3] = {_max_vel,1.2,4};
+
+    solver.setN(6);
+    solver.createVars();
+    solver.setDC(.05);
+    solver.setBounds(limits);
+    solver.setForceFinalConstraint(true);
+    solver.setFactorInitialAndFinalAndIncrement(1,10,1.0);
+    solver.setThreads(0);
+    solver.setWMax(4.0);
+    solver.setVerbose(0);
+}
+
+Planner::~Planner(){
+    delete global_costmap;
+    delete _prim_tree;
+
+    if (safety_thread.joinable()){
+        std::cout << "rejoined safety thread" << std::endl;
+        safety_thread.join();
+    }
+
+    if (primitive_tree_thread.joinable()){
+        std::cout << "rejoined primitive tree thread" << std::endl;
+        primitive_tree_thread.join();
+    }
 }
 
 /**********************************************************************
@@ -143,12 +183,25 @@ void Planner::spin(){
     ROS_INFO("starting global costmap");
     global_costmap->start();
     ROS_INFO("done!");
+
     _is_costmap_started = true;
+
+    _prim_tree = new MotionPrimitiveTree(global_costmap, 1.5, .1);
+
+    // Start the safety timer in a separate thread
+    if (_enable_recovery){
+        ROS_INFO("starting safety thread");
+        safety_thread = std::thread(&Planner::safetyTimerThread, this);
+
+        ROS_INFO("starting primitive tree thread");
+        primitive_tree_thread = std::thread(&Planner::buildPrimitiveTree, this);
+    }
 
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
     ros::waitForShutdown();
+
 }
 
 /**********************************************************************
@@ -194,7 +247,22 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
     goal(1) = msg->pose.position.y;
 
     _is_goal_set = true;
-    // ROS_INFO("goal received!");
+    ROS_INFO("goal received!");
+}
+
+
+void Planner::occlusionPointscb(const geometry_msgs::PoseArray::ConstPtr& msg){
+    _occ_point = Eigen::MatrixXd(2,3);
+    ROS_INFO("HELLO?");
+    if (msg->poses.size() > 0){
+        ROS_INFO("DOING THINGS?");
+        geometry_msgs::Pose p1 = msg->poses[0];
+        geometry_msgs::Pose p2 = msg->poses[1];
+
+        _occ_point.row(0) = Eigen::Vector3d(p1.position.x, p1.position.y, p1.position.z);
+        _occ_point.row(1) = Eigen::Vector3d(p2.position.x, p2.position.y, p2.position.z);
+        _is_occ = true;
+    }
 }
 
 
@@ -413,45 +481,200 @@ void Planner::visualizeTraj(){
   TODOS: 
     - Clean up some unnecessary lines (especially concerning factor)
 ***********************************************************************/
-template <int D>
-trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const Trajectory<D> &traj){
+trajectory_msgs::JointTrajectory Planner::convertTrajToMsg(const std::vector<state>& trajectory){
 
     trajectory_msgs::JointTrajectory msg;
     msg.header.stamp = ros::Time::now();
     msg.header.frame_id = _frame_str;
 
-    double factor = traj.getMaxVelRate() / _max_vel;
-    // ROS_ERROR("MAX VEL RATE IS %.2f", traj.getMaxVelRate());
-    factor = _const_factor;
-    double t = 0.;
+    double next_t = 0.;
+    for(int i = 0; i < trajectory.size(); i++){
+        state x = trajectory[i];
+        if(x.t >= next_t){
+            
+            trajectory_msgs::JointTrajectoryPoint p;
+            p.positions.push_back(x.pos(0));
+            p.positions.push_back(x.pos(1));
+            p.positions.push_back(x.pos(2));
 
-    while (t < traj.getTotalDuration()){
-        Eigen::Vector3d pos = traj.getPos(t);
-        Eigen::Vector3d vel = traj.getVel(t);
-        Eigen::Vector3d acc = traj.getAcc(t);
+            p.velocities.push_back(x.vel(0));
+            p.velocities.push_back(x.vel(1));
+            p.velocities.push_back(x.vel(2));
 
-        trajectory_msgs::JointTrajectoryPoint pt;
-        pt.positions.push_back(pos(0));
-        pt.positions.push_back(pos(1));
-        pt.positions.push_back(pos(2));
+            p.accelerations.push_back(x.accel(0));
+            p.accelerations.push_back(x.accel(1));
+            p.accelerations.push_back(x.accel(2));
 
-        pt.velocities.push_back(vel(0)/factor);
-        pt.velocities.push_back(vel(1)/factor);
-        pt.velocities.push_back(vel(2)/factor);
+            p.effort.push_back(x.jerk(0));
+            p.effort.push_back(x.jerk(1));
+            p.effort.push_back(x.jerk(2));
 
-        pt.accelerations.push_back(acc(0)/(factor*factor));
-        pt.accelerations.push_back(acc(1)/(factor*factor));
-        pt.accelerations.push_back(acc(2)/(factor*factor));
+            p.time_from_start = ros::Duration(x.t);
 
-        pt.time_from_start = ros::Duration(t*factor);
+            msg.points.push_back(p);
 
-        msg.points.push_back(pt);
-        
-       
-        t += _traj_dt/factor;
+            next_t += _traj_dt;
+        }
     }
 
     return msg;
+}
+
+void Planner::safetyTimerThread(){
+
+    constexpr double safety_loop_rate_hz = 50;
+    const std::chrono::milliseconds safety_loop_period(static_cast<int>(1000.0/safety_loop_rate_hz));
+
+    while (ros::ok()){
+        safetyLoop();
+
+        std::this_thread::sleep_for(safety_loop_period);
+    }
+}
+
+
+void Planner::buildPrimitiveTree(){
+
+    while (ros::ok){
+        // hold recovery lock when building tree, this will prevent the
+        // motion primitives execution loop from running until tree is generated.
+        std::unique_lock<std::mutex> recovery_lock(_recovery_mutex);
+        _generate_primitive_cv.wait(recovery_lock, [this] {return _generate_primitives.load(); });
+
+        _primitives_ready.store(false);
+
+        ROS_WARN("generating motion primitive tree");
+        _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
+        _prim_tree->update_costmap(global_costmap);
+
+        ROS_WARN("finding best trajectory");
+        ros::Time s = ros::Time::now();
+        _recovery_traj = _prim_tree->find_best_trajectory();
+        ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
+
+        _primitives_ready.store(true);
+        _generate_primitives.store(false);
+        _primitive_cv.notify_one();
+    }
+
+}
+
+
+void Planner::safetyLoop(){
+
+    if (!_is_init)
+        return;
+
+    std::unique_lock<std::mutex> robo_state_lock(_robo_state_mutex, std::defer_lock);
+    std::unique_lock<std::mutex> solver_state_lock(_solver_state_mutex, std::defer_lock);
+
+    // already in recovery state, no need to do anything
+    if (_robo_state == RECOVERY){
+        return;
+    }
+    
+    const costmap_2d::Costmap2D& costmap = *global_costmap->getCostmap();
+    unsigned int mx, my;
+    
+    if (costmap.worldToMap(_odom(0), _odom(1), mx, my)){
+        unsigned char cost = costmap.getCost(mx, my);
+        if (cost != costmap_2d::INSCRIBED_INFLATED_OBSTACLE && cost != costmap_2d::LETHAL_OBSTACLE)
+            return;
+    }
+
+    // by this point we are close to obstacles and recovery behavior should be triggered
+    solver_state_lock.lock();
+    robo_state_lock.lock();
+
+    if (solver_state.status.data != 0){
+        _robo_state.store(RECOVERY);
+        _generate_primitives.store(true);
+        _generate_primitive_cv.notify_one();
+
+        solver_state_lock.unlock();
+        robo_state_lock.unlock();
+
+        ROS_WARN("entering recovery mode");
+
+        trajectory_msgs::JointTrajectory msg;
+        msg.header.stamp = ros::Time::now();
+        msg.header.frame_id = _frame_str;
+
+        trajPub.publish(msg);
+
+        geometry_msgs::Twist cmd_vel;
+        cmd_vel.linear.x = 0;
+        cmd_vel.angular.z = 0;
+        cmdVelPub.publish(cmd_vel);
+
+        state_transition_start_t = ros::Time::now();
+        
+        return;
+    }
+
+    robo_state_lock.unlock();
+    solver_state_lock.unlock();
+
+}
+
+void Planner::primitivesLoop(const ros::TimerEvent&){
+    
+    static int index = 0;
+
+    if (_robo_state != RECOVERY)
+        return;
+
+    // attempting to acquire this mutex means that it will wait to start
+    // if primitives are not yet generated.
+    std::unique_lock<std::mutex> recovery_lock(_recovery_mutex);
+    if (!_primitives_ready)
+        _primitive_cv.wait(recovery_lock, [this] {return _primitives_ready.load(); });
+
+    if ((ros::Time::now()-state_transition_start_t).toSec() < 2)
+        return;
+
+    if (!_primitive_started){
+        _primitive_started = true;
+        primitive_segment_start= ros::Time::now();
+    }
+
+    const MotionPrimitiveNode* n = _recovery_traj[index];
+
+    if(n->isDone((ros::Time::now()-primitive_segment_start).toSec())){
+
+        ROS_INFO("switching primitives");
+        if (++index >= _recovery_traj.size()){
+            index = 0;
+            _recovery_traj.clear();
+
+            std::unique_lock<std::mutex> robo_state_lock(_robo_state_mutex);
+            _robo_state.store(NOMINAL);
+            robo_state_lock.unlock();
+
+            _primitive_started = false;
+
+            ROS_INFO("switching back to nominal behavior");
+
+            geometry_msgs::Twist cmd_vel;
+            cmd_vel.linear.x = 0;
+            cmd_vel.angular.z = 0;
+            cmdVelPub.publish(cmd_vel);
+
+            state_transition_start_t = ros::Time::now();
+
+            return;
+        }
+
+        n = _recovery_traj[index];
+        primitive_segment_start = ros::Time::now();
+        // n->isDone((ros::Time::now()-_primitive_segment_start).toSec());
+    }
+
+    geometry_msgs::Twist cmd_vel;
+    cmd_vel.linear.x = n->motion_primitive.at("speed");
+    cmd_vel.angular.z = n->motion_primitive.at("angular_velocity");
+    cmdVelPub.publish(cmd_vel);
+    
 }
 
 /**********************************************************************
@@ -472,8 +695,12 @@ void Planner::controlLoop(const ros::TimerEvent&){
     if ((_odom(1)-goal(1))*(_odom(1)-goal(1))+(_odom(0)-goal(0))*(_odom(0)-goal(0)) < .2)
         return;
 
-    // local_costmap->resetLayers();
-    // local_costmap->updateMap();
+    if (_robo_state == RECOVERY)
+        return;
+
+    if (_robo_state == NOMINAL && (ros::Time::now()-state_transition_start_t).toSec() < 2)
+        return;
+    
 
     /*************************************
     ************* UPDATE MAP *************
@@ -482,13 +709,51 @@ void Planner::controlLoop(const ros::TimerEvent&){
     // global_costmap->resetLayers();
     global_costmap->updateMap();
 
-    // costmap_2d::Costmap2D* _map = local_costmap->getCostmap();
+    /*************************************
+    **************** PLAN ****************
+    **************************************/
+
     if (_plan_once && _planned)
         return;
-        
+
+    const costmap_2d::Costmap2D& _map = *global_costmap->getCostmap();
+
+    unsigned int map_x, map_y;
+    _map.worldToMap(_odom(0), _odom(1), map_x, map_y);
+
     if (!plan()){
         count++;
-        solverStatePub.publish(solver_state);
+
+        // if (_map.getCost(map_x, map_y) == costmap_2d::INSCRIBED_INFLATED_OBSTACLE){
+        //     solverStatePub.publish(solver_state);
+        //     ROS_WARN("robot has entered recovery state");
+
+        //     sentTraj.points.clear();
+
+        //     ROS_WARN("generating motion primitive tree");
+        //     _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
+        //     _prim_tree->update_costmap(global_costmap);
+
+        //     ROS_WARN("finding best trajectory");
+        //     ros::Time s = ros::Time::now();
+        //     _recovery_traj = _prim_tree->find_best_trajectory();
+        //     ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
+
+        //     for(auto node : _recovery_traj)
+        //         std::cout << node->toString() << std::endl;
+
+        //     trajectory_msgs::JointTrajectory msg;
+        //     msg.header.stamp = ros::Time::now();
+        //     msg.header.frame_id = _frame_str;
+
+        //     trajPub.publish(msg);
+        //     recovery_start = ros::Time::now();
+        //     _robo_state = RECOVERY;
+
+        //     count = 0;
+
+        //     return;
+        // }
     }
     else
         count = 0;
@@ -528,17 +793,21 @@ bool Planner::plan(bool is_failsafe){
     
     ros::Time a = ros::Time::now();
 
-    Eigen::Matrix3d initialPVA;
     bool not_first = false;
 
-    Eigen::Matrix3d finalPVA;
-    finalPVA << Eigen::Vector3d(goal(0),goal(1),0), 
+    ROS_INFO("Setting up initial and final conditions");
+    Eigen::MatrixXd initialPVAJ(3,4);
+    Eigen::MatrixXd finalPVAJ(3,4);
+
+    finalPVAJ << Eigen::Vector3d(goal(0),goal(1),0), 
                 Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
 
     if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
-        initialPVA <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
+        initialPVAJ <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
                         Eigen::Vector3d::Zero(), 
+                        Eigen::Vector3d::Zero(),
                         Eigen::Vector3d::Zero();
     }
     else{
@@ -560,31 +829,39 @@ bool Planner::plan(bool is_failsafe){
         poseMsg.point.z = p.positions[2];
         initPointPub.publish(poseMsg);
 
-        initialPVA.col(0) = Eigen::Vector3d(p.positions[0], 
+        initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], 
                                             p.positions[1], 
                                             p.positions[2]);
-        // start from robot not moving
+                                            
+        // start from robot not moving if failsafe
         if (is_failsafe){
-            initialPVA.col(1) = Eigen::Vector3d(0,0,0);
-            initialPVA.col(2) = Eigen::Vector3d(0,0,0);
+            initialPVAJ.col(1) = Eigen::Vector3d(0,0,0);
+            initialPVAJ.col(2) = Eigen::Vector3d(0,0,0);
+            initialPVAJ.col(3) = Eigen::Vector3d(0,0,0);
         }else{
-            initialPVA.col(1) = Eigen::Vector3d(p.velocities[0]*factor, 
-                                                p.velocities[1]*factor, 
-                                                p.velocities[2]*factor);
-            initialPVA.col(2) = Eigen::Vector3d(p.accelerations[0]*factor*factor,
-                                                p.accelerations[1]*factor*factor,
-                                                p.accelerations[2]*factor*factor);
-        }
+            initialPVAJ.col(1) = Eigen::Vector3d(p.velocities[0],
+                                                 p.velocities[1],
+                                                 p.velocities[2]);
+            initialPVAJ.col(2) = Eigen::Vector3d(p.accelerations[0],
+                                                 p.accelerations[1],
+                                                 p.accelerations[2]);
+
+            // effort contains jerk information in our case
+            initialPVAJ.col(3) = Eigen::Vector3d(p.effort[0],
+                                                 p.effort[1],
+                                                 p.effort[2]);
+        } 
     }
 
     /*************************************
     ************ PERFORM  JPS ************
     **************************************/
 
+    ROS_INFO("Running JPS");
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
     _map->worldToMap(_odom(0), _odom(1), sX, sY);
-    // _map->worldToMap(initialPVA.col(0)[0], initialPVA.col(0)[1], sX, sY);
+    // _map->worldToMap(initialPVAJ.col(0)[0], initialPVAJ.col(0)[1], sX, sY);
     _map->worldToMap(goal(0), goal(1), eX, eY);
 
     jps.set_start(sX, sY);
@@ -595,74 +872,23 @@ bool Planner::plan(bool is_failsafe){
                 _map->getOriginX(), _map->getOriginY(), _map->getResolution());
     jps.JPS();
 
+    ROS_INFO("getting path");
     std::vector<Eigen::Vector2d> jpsPath = jps.getPath(_simplify_jps);
+    ROS_INFO("got path");
 
     trajectory_msgs::JointTrajectory empty_msg; 
-    populateSolverState(solver_state, hPolys, empty_msg, initialPVA, finalPVA, 0);
+    populateSolverState(solver_state, hPolys, empty_msg, initialPVAJ, finalPVAJ, 0);
     if (jpsPath.size() == 0){
         ROS_ERROR("JPS failed to find path");
         solver_state.status.data = 1;
         return false;
     }
 
-    // double cost = 0;
-    // for(int i = 0; i < jpsPath.size(); i++){
-    //     double x, y;
-    //     _map->mapToWorld(jpsPath[i](0), jpsPath[i](1), x, y);
-    //     jpsPath[i] = Eigen::Vector2d(x,y);
-
-    // jpsPath.insert(jpsPath.begin(), Eigen::Vector2d(_odom(0), _odom(1)));
-    //     if (i > 0)
-    //         cost += (jpsPath[i]-jpsPath[i-1]).norm();
-    // }
-
-    // bool _is_old_jps_valid = true;
-
-    // if (_prev_jps_path.size() > 0){
-    //     for(int i = 0; i < _prev_jps_path.size(); i++)
-
-    //     for(int i = 0; i < _prev_jps_path.size()-1; i++){
-    //         if (jps.isBlocked(_prev_jps_path[i], _prev_jps_path[i+1], false)){
-    //             _is_old_jps_valid = false;
-    //             break;
-    //         } else{
-    //             std::cout << _prev_jps_path[i].transpose()  << " to " << 
-    //                 _prev_jps_path[i+1].transpose() << " is not blocked" << std::endl;
-    //         }
-    //     }
-    // }
-
-    // if (_prev_jps_path.size() > 0 && fabs(_prev_jps_cost/cost - 1) < .01 &&
-    //     _is_old_jps_valid){
-    //     ROS_INFO("sticking with old JPS as new one wasn't significantly different");
-    //     jpsPath = _prev_jps_path;
-    // }
-    // else{
-    //     _prev_jps_path = jpsPath;
-    //     _prev_jps_cost = cost;
-    // }
-
-
+    ROS_INFO("finished JPS");
+    
     /*************************************
-    ******** PUBLISH JPS TO RVIZ *********
+    ************* REFINE JPS *************
     **************************************/
-
-    nav_msgs::Path jpsMsg;
-    jpsMsg.header.stamp = ros::Time::now();
-    jpsMsg.header.frame_id = _frame_str;
-
-    for(Eigen::Vector2d p : jpsPath){
-        geometry_msgs::PoseStamped pMsg;
-        pMsg.header = jpsMsg.header;
-        pMsg.pose.position.x = p(0);
-        pMsg.pose.position.y = p(1);
-        pMsg.pose.position.z = 0;
-        pMsg.pose.orientation.w = 1;
-        jpsMsg.poses.push_back(pMsg);
-        
-    }
-
-    jpsPub.publish(jpsMsg);
 
     Eigen::Vector2d goalPoint;
     if (_plan_in_free){
@@ -686,8 +912,9 @@ bool Planner::plan(bool is_failsafe){
 
         jpsPubFree.publish(jpsMsgFree);
 
-        finalPVA << Eigen::Vector3d(jpsFree.back()[0],jpsFree.back()[1],0), 
+        finalPVAJ << Eigen::Vector3d(jpsFree.back()[0],jpsFree.back()[1],0), 
                 Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
 
         if (jpsFree.size() == 0){
@@ -707,9 +934,12 @@ bool Planner::plan(bool is_failsafe){
 
             jpsPath = newJPSPath;
 
-            finalPVA << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
                 Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
+
+            ROS_INFO_STREAM("JPS path intersected circle at " << goalPoint);
         } else{
             ROS_WARN("JPS path did not intersect circle around robot");
         }
@@ -717,9 +947,30 @@ bool Planner::plan(bool is_failsafe){
     }
 
     /*************************************
-    ********* GENERATE POLYTOPES *********
+    ******** PUBLISH JPS TO RVIZ *********
     **************************************/
 
+    nav_msgs::Path jpsMsg;
+    jpsMsg.header.stamp = ros::Time::now();
+    jpsMsg.header.frame_id = _frame_str;
+
+    for(Eigen::Vector2d p : jpsPath){
+        geometry_msgs::PoseStamped pMsg;
+        pMsg.header = jpsMsg.header;
+        pMsg.pose.position.x = p(0);
+        pMsg.pose.position.y = p(1);
+        pMsg.pose.position.z = 0;
+        pMsg.pose.orientation.w = 1;
+        jpsMsg.poses.push_back(pMsg);
+        
+    }
+
+    jpsPub.publish(jpsMsg);
+
+    /*************************************
+    ********* GENERATE POLYTOPES *********
+    **************************************/
+    
     ROS_INFO("creating corridor");
     // don't need to clear hPolys before calling because method will do it
     if (!corridor::createCorridorJPS(jpsPath, *_map, _obs, hPolys)){
@@ -746,74 +997,45 @@ bool Planner::plan(bool is_failsafe){
     ******** GENERATE  TRAJECTORY ********
     **************************************/
 
-    // initial and final states
+    state initialState;
+    state finalState;
 
-    Eigen::VectorXd magnitudeBounds(5);
-    Eigen::VectorXd penaltyWeights(5);
-    Eigen::VectorXd physicalParams(6);
-    magnitudeBounds(0) = 1.8;   //v_max
-    magnitudeBounds(1) = .8;   //omg_max
-    magnitudeBounds(2) = .8;    //theta_max
-    magnitudeBounds(3) = 2;     //thrust_min
-    magnitudeBounds(4) = 12;    //thrust_max
-    penaltyWeights(0) = 1e4;    //pos_weight
-    penaltyWeights(1) = 1e4;    //vel_weight
-    penaltyWeights(2) = 1e4;    //omg_weight
-    penaltyWeights(3) = 1e4;    //theta_weight
-    penaltyWeights(4) = 1e5;    //thrust_weight
-    physicalParams(0) = 200;    // mass
-    physicalParams(1) = 9.81;   // gravity
-    physicalParams(2) = 0;      // drag
-    physicalParams(3) = 0;      // drag
-    physicalParams(4) = 0;      // drag
-    physicalParams(5) = .0001;  // speed smooth factor
+    initialState.setPos(initialPVAJ(0,0), initialPVAJ(1,0), initialPVAJ(2,0));
+    initialState.setVel(initialPVAJ(0,1), initialPVAJ(1,1), initialPVAJ(2,1));
+    initialState.setAccel(initialPVAJ(0,2), initialPVAJ(1,2), initialPVAJ(2,2));
+    initialState.setJerk(initialPVAJ(0,3), initialPVAJ(1,3), initialPVAJ(2,3));
 
-    gcopter::GCOPTER_PolytopeSFC gcopter;
+    finalState.setPos(finalPVAJ.col(0));
+    finalState.setVel(finalPVAJ.col(1));
+    finalState.setAccel(finalPVAJ.col(2));
+    finalState.setJerk(finalPVAJ.col(3));
 
     ROS_INFO("setting up");
-    if(!gcopter.setup(
-        20.0,   //time weight
-        initialPVA, 
-        finalPVA,
-        hPolys,
-        1e6,    // lengthPerPiece
-        1e-2,   // smoothing factor
-        16,     // integral resolution
-        magnitudeBounds,
-        penaltyWeights,
-        physicalParams
-    )){
-        ROS_ERROR("optimizer setup failed");
-        solver_state.status.data = 3;
-        return false;
-    }
+    solver.setX0(initialState);
+    solver.setXf(finalState);
+    solver.setPolytopes(hPolys);
+
+    if (_is_occ)
+        solver.setOcc(_occ_point);
 
     ROS_INFO("solving");
-    Trajectory<5> newTraj;
-    if (std::isinf(gcopter.optimize(newTraj, 1e-5))){
+    if (!solver.genNewTraj()){
         ROS_ERROR("solver could not find trajectory");
         solver_state.status.data = 3;
         return false;
     }
 
-    if (newTraj.getMaxVelRate() > _const_factor){
-        ROS_ERROR("new trajectory was way too fast (%.2f m/s)!", newTraj.getMaxVelRate());
-        solver_state.status.data = 4;
-        return false;
-    }
 
+
+    solver.fillX();
     /*************************************
     ******** STITCH  TRAJECTORIES ********
     **************************************/
 
     ROS_INFO("stitching trajectories");
-    // ROS_INFO("sentTraj size is %lu", sentTraj.points.size());
-    if (sentTraj.points.size() != 0){// || _is_goal_reset){
-        // ROS_INFO("sentTraj points size is %lu", sentTraj.points.size());
 
-        double maxVel = traj.getMaxVelRate();
-        double factor = maxVel / _max_vel;
-        factor = _const_factor;
+    if (sentTraj.points.size() != 0){
+
 
         double t1 = std::round((ros::Time::now()-start).toSec()*10.)/10.;
         double t2 = std::round(((a-start).toSec() + _lookahead)*10.)/10.;
@@ -826,16 +1048,16 @@ bool Planner::plan(bool is_failsafe){
         // ROS_INFO("[%.2f] startInd is %d\ttrajInd is %d", (ros::Time::now()-start).toSec(),startInd, trajInd);
 
         trajectory_msgs::JointTrajectory aTraj, bTraj;
-        bTraj = convertTrajToMsg(newTraj);
+        bTraj = convertTrajToMsg(solver.X_temp_);
         
         // if current trajectory violates corridor constraints but previous trajectory
         // isn't intersecting any lethal obstacles, just keep the old trajectory
-        if (isTrajOutsidePolys(bTraj, hPolys, .2) && !isTrajOverlappingObs(sentTraj, *_map) ){
-            ROS_ERROR("corridor violation was too high and sentTraj isn't overlapping obs");
-            ROS_ERROR("sentTraj overlapping obstacles? %d", isTrajOverlappingObs(sentTraj, *_map));
-            solver_state.status.data = 4;
-            return false;
-        }
+        // if (isTrajOutsidePolys(bTraj, hPolys, .2) && !isTrajOverlappingObs(sentTraj, *_map) ){
+        //     ROS_ERROR("corridor violation was too high and sentTraj isn't overlapping obs");
+        //     ROS_ERROR("sentTraj overlapping obstacles? %d", isTrajOverlappingObs(sentTraj, *_map));
+        //     solver_state.status.data = 4;
+        //     return false;
+        // }
 
         for(int i = startInd; i < trajInd; i++){
             aTraj.points.push_back(sentTraj.points[i]);
@@ -856,10 +1078,7 @@ bool Planner::plan(bool is_failsafe){
         _is_goal_reset = false;
         start = ros::Time::now();
     }else{
-        // ROS_INFO("trajectory has been overwritten");
-        traj = newTraj;
-        sentTraj = convertTrajToMsg(newTraj);
-
+        sentTraj = convertTrajToMsg(solver.X_temp_);
         start = ros::Time::now();
     }
 
@@ -874,7 +1093,7 @@ bool Planner::plan(bool is_failsafe){
     if (_plan_once)
         _planned = true;
     
-    populateSolverState(solver_state, hPolys, sentTraj, initialPVA, finalPVA, 0);
+    populateSolverState(solver_state, hPolys, sentTraj, initialPVAJ, finalPVAJ, 0);
 
     double totalT = (ros::Time::now() - a).toSec();
     std::cout << "total time is " << totalT << std::endl;
@@ -928,10 +1147,10 @@ void Planner::pubPolys(){
     geometry_msgs::PoseArray wptMsg;
 
     corridor::corridorToMsg(hPolys, corridorMsg);
-    for(Eigen::MatrixX4d& poly : hPolys){
-        std::cout << "\033[1;31m******************POLY******************\033[0m" << std::endl;
-        std::cout << poly << std::endl;
-    }
+    // for(Eigen::MatrixX4d& poly : hPolys){
+    //     std::cout << "\033[1;31m******************POLY******************\033[0m" << std::endl;
+    //     std::cout << poly << std::endl;
+    // }
     // intGoalPub.publish(wptMsg);
     corridorPub.publish(corridorMsg);
 
@@ -980,19 +1199,19 @@ void Planner::pubCurrPoly(){
 void populateSolverState(robust_fast_navigation::SolverState& state, 
                          const std::vector<Eigen::MatrixX4d>& hPolys,
                          const trajectory_msgs::JointTrajectory& traj,
-                         const Eigen::Matrix3d& initialPVA,
-                         const Eigen::Matrix3d& finalPVA,
+                         const Eigen::MatrixXd& initialPVAJ,
+                         const Eigen::MatrixXd& finalPVAJ,
                          int status){
 
     corridor::corridorToMsg(hPolys, state.polys);
 
-    state.initialPVA.positions = {initialPVA(0,0), initialPVA(1,0), initialPVA(2,0)};
-    state.initialPVA.velocities = {initialPVA(0,1), initialPVA(1,1), initialPVA(2,1)};
-    state.initialPVA.accelerations = {initialPVA(2,0), initialPVA(2,1), initialPVA(2,2)};
+    state.initialPVA.positions = {initialPVAJ(0,0), initialPVAJ(1,0), initialPVAJ(2,0)};
+    state.initialPVA.velocities = {initialPVAJ(0,1), initialPVAJ(1,1), initialPVAJ(2,1)};
+    state.initialPVA.accelerations = {initialPVAJ(0,2), initialPVAJ(1,2), initialPVAJ(2,2)};
 
-    state.finalPVA.positions = {finalPVA(0,0), finalPVA(1,0), finalPVA(2,0)};
-    state.finalPVA.velocities = {finalPVA(0,1), finalPVA(1,1), finalPVA(2,1)};
-    state.finalPVA.accelerations = {finalPVA(0,2), finalPVA(1,2), finalPVA(2,2)};
+    state.finalPVA.positions = {finalPVAJ(0,0), finalPVAJ(1,0), finalPVAJ(2,0)};
+    state.finalPVA.velocities = {finalPVAJ(0,1), finalPVAJ(1,1), finalPVAJ(2,1)};
+    state.finalPVA.accelerations = {finalPVAJ(0,2), finalPVAJ(1,2), finalPVAJ(2,2)};
 
     state.trajectory = traj;
     

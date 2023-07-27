@@ -8,14 +8,19 @@
 
 #include <ros/ros.h>
 #include <nav_msgs/OccupancyGrid.h>
+#include <geometry_msgs/PoseArray.h>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <visualization_msgs/Marker.h>
+#include <trajectory_msgs/JointTrajectory.h>
 
 #include <decomp_util/seed_decomp.h>
 #include <decomp_util/ellipsoid_decomp.h>
 #include <decomp_geometry/geometric_utils.h>
 
 #include <robust_fast_navigation/utils.h>
+
+#include <drake/solvers/mathematical_program.h>
+#include <drake/geometry/optimization/hpolyhedron.h>
 
 namespace corridor{
 
@@ -223,10 +228,9 @@ namespace corridor{
 
 
     inline Eigen::MatrixX4d genPoly(const costmap_2d::Costmap2D& _map, 
-                                    double x, double y, const vec_Vec2f& _obs){
+                                    double x, double y){
         SeedDecomp2D decomp(Vec2f(x, y));
-        // decomp.set_obs(_obs);
-        decomp.set_obs(getPaddedScan(_map, x, y, _obs));
+        decomp.set_obs(getOccupied(_map));
         decomp.set_local_bbox(Vec2f(2,2));
         decomp.dilate(.1);
 
@@ -263,7 +267,8 @@ namespace corridor{
 
     inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
                                     const ros::Publisher& meshPub,
-                                    const ros::Publisher& edgePub){
+                                    const ros::Publisher& edgePub,
+                                    bool highlight = false){
 
         // Due to the fact that H-representation cannot be directly visualized
         // We first conduct vertex enumeration of them, then apply quickhull
@@ -314,9 +319,16 @@ namespace corridor{
         edgeMarker = meshMarker;
         edgeMarker.type = visualization_msgs::Marker::LINE_LIST;
         edgeMarker.ns = "edge";
-        edgeMarker.color.r = 0.365;
-        edgeMarker.color.g = 0.851;
-        edgeMarker.color.b = 0.757;
+
+        if (highlight){
+            edgeMarker.color.r = 1;
+            edgeMarker.color.g = 0;
+            edgeMarker.color.b = 0;
+        }else{
+            edgeMarker.color.r = 0.365;
+            edgeMarker.color.g = 0.851;
+            edgeMarker.color.b = 0.757;
+        }
         edgeMarker.color.a = 1.00;
         edgeMarker.scale.x = 0.02;
 
@@ -414,7 +426,7 @@ namespace corridor{
 
         std::vector<Eigen::MatrixX4d> polys;
         Eigen::Vector2d seed(path[0](0), path[0](1));
-        polys.push_back(genPoly(_map, seed(0), seed(1), _obs));
+        polys.push_back(genPoly(_map, seed(0), seed(1)));
 
         Eigen::Vector2d goal = path.back();
 
@@ -431,7 +443,7 @@ namespace corridor{
                 }
             }
 
-            polys.push_back(genPoly(_map, newSeed(0), newSeed(1), _obs));
+            polys.push_back(genPoly(_map, newSeed(0), newSeed(1)));
             i++;
         }
 
@@ -562,6 +574,259 @@ namespace corridor{
         // return polys;
     }
 
+    inline std::vector<Eigen::MatrixX4d> addHelperPolysChebyshev(
+        const costmap_2d::Costmap2D& _map,
+        const std::vector<Eigen::MatrixX4d>& hPolys){
+
+        std::vector<Eigen::MatrixX4d> res;
+        for(unsigned int q = 0; q < hPolys.size()-1; q++){
+            
+            Eigen::MatrixX4d p1(hPolys[q].rows(), hPolys[q].cols());
+            for(int i = 0; i < hPolys[q].rows(); i++){
+                p1.row(i) = hPolys[q].row(i);
+                if(fabs(hPolys[q].row(i)[0]) < 1e-2 && fabs(hPolys[q].row(i)[1]) < 1e-2)
+                    p1.row(i)[3] *= 100;
+            }
+
+            Eigen::MatrixX4d p2(hPolys[q+1].rows(), hPolys[q+1].cols());
+            for(int i = 0; i < hPolys[q+1].rows(); i++){
+                p2.row(i) = hPolys[q+1].row(i);
+                if(fabs(hPolys[q+1].row(i)[0]) < 1e-2 && fabs(hPolys[q+1].row(i)[1]) < 1e-2)
+                    p2.row(i)[3] *= 100;
+            }
+
+            Eigen::MatrixXd A1 = p1.leftCols(p1.cols()-1);
+            Eigen::VectorXd b1 = -1*p1.rightCols(1);
+
+            Eigen::MatrixXd A2 = p2.leftCols(p1.cols()-1);
+            Eigen::VectorXd b2 = -1*p2.rightCols(1);
+
+            drake::geometry::optimization::HPolyhedron poly1(A1, b1);
+            drake::geometry::optimization::HPolyhedron poly2(A2, b2);
+
+            drake::geometry::optimization::HPolyhedron intersection = poly1.Intersection(poly2, true);
+            
+            if (intersection.IsEmpty()){
+                ROS_INFO("intersection b/w poly %d and %d is empty", q, q+1);
+                continue;
+            }
+
+            Eigen::VectorXd center = intersection.ChebyshevCenter();
+
+            Eigen::MatrixX4d hIntersect(intersection.A().rows(), 
+                                        intersection.A().cols()+intersection.b().cols());
+            
+            hIntersect.leftCols(intersection.A().cols()) = intersection.A();
+            hIntersect.rightCols(intersection.b().cols()) = -intersection.b();
+            
+            double d = dist2Poly(Eigen::Vector2d(center[0], center[1]), hIntersect);
+            if (d < .2){
+                ROS_INFO("space too small between poly %d and poly %d -- %.2f\t[%.2f, %.2f]",  
+                            q, q+1, d, center[0], center[1]);
+                Eigen::MatrixX4d helper = corridor::genPoly(_map, center[0], center[1]);
+                res.push_back(helper);
+            }
+
+            // res.push_back(hPolys[q]);
+        }
+        ROS_INFO("res is size %lu", res.size());
+        return res;
+    }
+
+     inline std::vector<Eigen::MatrixX4d> addHelperPolysTrajectory(
+        const costmap_2d::Costmap2D& _map,
+        const std::vector<Eigen::MatrixX4d>& hPolys,
+        const trajectory_msgs::JointTrajectory& sentTraj
+        ){
+
+        int last_stopped = 1;
+        std::vector<Eigen::MatrixX4d> res;
+        for(unsigned int q = 0; q < hPolys.size()-1; q++){
+            
+            Eigen::MatrixX4d p1(hPolys[q].rows(), hPolys[q].cols());
+            for(int i = 0; i < hPolys[q].rows(); i++){
+                p1.row(i) = hPolys[q].row(i);
+                if(fabs(hPolys[q].row(i)[0]) < 1e-2 && fabs(hPolys[q].row(i)[1]) < 1e-2)
+                    p1.row(i)[3] *= 100;
+            }
+
+            Eigen::MatrixX4d p2(hPolys[q+1].rows(), hPolys[q+1].cols());
+            for(int i = 0; i < hPolys[q+1].rows(); i++){
+                p2.row(i) = hPolys[q+1].row(i);
+                if(fabs(hPolys[q+1].row(i)[0]) < 1e-2 && fabs(hPolys[q+1].row(i)[1]) < 1e-2)
+                    p2.row(i)[3] *= 100;
+            }
+
+            Eigen::MatrixXd A1 = p1.leftCols(p1.cols()-1);
+            Eigen::VectorXd b1 = -1*p1.rightCols(1);
+
+            Eigen::MatrixXd A2 = p2.leftCols(p1.cols()-1);
+            Eigen::VectorXd b2 = -1*p2.rightCols(1);
+
+            drake::geometry::optimization::HPolyhedron poly1(A1, b1);
+            drake::geometry::optimization::HPolyhedron poly2(A2, b2);
+
+            Eigen::Vector2d traj_point(sentTraj.points[0].positions[0], sentTraj.points[0].positions[1]);
+            for(int i = last_stopped; i < sentTraj.points.size(); i++){
+                std::vector<double> positions = sentTraj.points[i].positions;
+                if (poly2.PointInSet(Eigen::Vector3d(positions[0], positions[1], 0))){
+                    traj_point = Eigen::Vector2d(positions[0], positions[1]);
+                    last_stopped = i;
+                    break;
+                }
+            }
+
+            drake::geometry::optimization::HPolyhedron intersection = poly1.Intersection(poly2, true);
+            
+            if (intersection.IsEmpty()){
+                ROS_INFO("intersection b/w poly %d and %d is empty", q, q+1);
+                continue;
+            }
+
+            Eigen::VectorXd center = intersection.ChebyshevCenter();
+
+            Eigen::MatrixX4d hIntersect(intersection.A().rows(), 
+                                        intersection.A().cols()+intersection.b().cols());
+            
+            hIntersect.leftCols(intersection.A().cols()) = intersection.A();
+            hIntersect.rightCols(intersection.b().cols()) = -intersection.b();
+            
+            Eigen::Vector2d cheby_cent = Eigen::Vector2d(center[0], center[1]);
+            double d = dist2Poly(cheby_cent, hIntersect);
+
+            res.push_back(hPolys[q]);
+            if (d < (traj_point-cheby_cent).norm()){
+                // ROS_INFO("trajectory is too far from cheby_center of %d and %d -- %.2f\t[%.2f, %.2f]",  
+                //             q, q+1, d, center[0], center[1]);
+                // Eigen::MatrixX4d helper = corridor::genPoly(_map, center[0], center[1]);
+                Eigen::MatrixX4d helper = corridor::genPoly(_map, traj_point[0], traj_point[1]);
+                res.push_back(helper);
+            }
+
+        }
+        ROS_INFO("res is size %lu", res.size());
+        return res;
+    }
+
+    inline void makeWptMsg(){
+        // wptMsgs.header.frame_id = _frame_str;
+        // wptMsgs.header.stamp = ros::Time::now();
+
+        // geometry_msgs::Pose pMsg;
+        // pMsg.position.x = _odom(0);
+        // pMsg.position.y = _odom(1);
+        // pMsg.position.z = 0;
+        // pMsg.orientation.w = 1;
+        // wptMsgs.poses.push_back(pMsg);
+
+        // int lastStopped = 1;
+
+        // for(int k = 0; k < hPolys.size(); k++){
+
+        //     Eigen::MatrixX4d currPoly = hPolys[k];
+        //     for(int i = 0; i < currPoly.rows(); ++i){
+        //         // skip the Z-axis planes
+        //         // if (fabs(currPoly.row(i)[0]) < 1e-2 && fabs(currPoly.row(i)[1]) < 1e-2)
+        //         //     continue;
+
+        //         // Eigen::MatrixX4d expandedPoly = expandPoly(currPoly, .05);
+        //         geometry_msgs::Pose p;
+        //         p.orientation.x = currPoly.row(i)[0];
+        //         p.orientation.y = currPoly.row(i)[1];
+        //         p.orientation.z = currPoly.row(i)[2];
+        //         p.orientation.w = currPoly.row(i)[3];
+        //         msg.poses.push_back(p);
+        //         // ROS_INFO("{%d}: %.2f\t%.2f\t%.2f\t%.2f", i, p.orientation.x,
+        //         //                                          p.orientation.y,
+        //         //                                          p.orientation.z,
+        //         //                                          p.orientation.w);
+        //     }
+
+        //     // all zeroes used as a separator between polytopes
+        //     geometry_msgs::Pose separator;
+        //     separator.orientation.x = 0;
+        //     separator.orientation.y = 0;
+        //     separator.orientation.z = 0;
+        //     separator.orientation.w = 0;
+        //     msg.poses.push_back(separator);
+
+        //     for(int i = lastStopped; i < sentTraj.points.size(); i++){
+        //         trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i];
+        //         Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+        //         bool is_in = true;
+        //         for(int j = 0; j < currPoly.rows(); j++){
+        //             Eigen::Vector4d plane = currPoly.row(j);
+        //             double dot = plane[0]*pos[0]+plane[1]*pos[1]+plane[2]*pos[2]+plane[3];
+        //             if (dot > 0){
+        //                 is_in = false;
+        //                 lastStopped = i;
+        //                 break;
+        //             }
+        //         }
+
+        //         if (!is_in){
+        //             // ROS_INFO("i is %d", i);
+        //             trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[std::max(i-1,0)];
+        //             Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+        //             geometry_msgs::Pose pM;
+        //             pM.position.x = pos(0);
+        //             pM.position.y = pos(1);
+        //             pM.position.z = pos(2);
+        //             pM.orientation.w = 1;
+        //             wptMsgs.poses.push_back(pM);
+        //             break;
+        //         }
+
+        //     }
+
+        // }
+
+        // trajectory_msgs::JointTrajectoryPoint p = sentTraj.points.back();
+        // Eigen::Vector3d pos(p.positions[0], p.positions[1], p.positions[2]);
+        // geometry_msgs::Pose pM;
+        // pM.position.x = pos(0);
+        // pM.position.y = pos(1);
+        // pM.position.z = pos(2);
+        // pM.orientation.w = 1;
+        // wptMsgs.poses.push_back(pM);
+    }
+
+    inline void corridorToMsg(
+        const std::vector<Eigen::MatrixX4d>& hPolys, 
+        geometry_msgs::PoseArray& msg
+    ){
+
+        for(int k = 0; k < hPolys.size(); k++){
+
+            Eigen::MatrixX4d currPoly = hPolys[k];
+            for(int i = 0; i < currPoly.rows(); ++i){
+                // skip the Z-axis planes
+                // if (fabs(currPoly.row(i)[0]) < 1e-2 && fabs(currPoly.row(i)[1]) < 1e-2)
+                //     continue;
+
+                // Eigen::MatrixX4d expandedPoly = expandPoly(currPoly, .05);
+                geometry_msgs::Pose p;
+                p.orientation.x = currPoly.row(i)[0];
+                p.orientation.y = currPoly.row(i)[1];
+                p.orientation.z = currPoly.row(i)[2];
+                p.orientation.w = currPoly.row(i)[3];
+                msg.poses.push_back(p);
+                // ROS_INFO("{%d}: %.2f\t%.2f\t%.2f\t%.2f", i, p.orientation.x,
+                //                                          p.orientation.y,
+                //                                          p.orientation.z,
+                //                                          p.orientation.w);
+            }
+
+            // all zeroes used as a separator between polytopes
+            geometry_msgs::Pose separator;
+            separator.orientation.x = 0;
+            separator.orientation.y = 0;
+            separator.orientation.z = 0;
+            separator.orientation.w = 0;
+            msg.poses.push_back(separator);
+
+        }
+    }
 }
 
 #endif
