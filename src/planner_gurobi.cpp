@@ -129,6 +129,9 @@ Planner::Planner(ros::NodeHandle& nh){
 
     _prev_jps_cost = -1;
 
+    _prim_tree = nullptr;
+    global_costmap = nullptr;
+
     ROS_INFO("Initialized planner!");
 
     double limits[3] = {_max_vel,1.2,4};
@@ -145,8 +148,12 @@ Planner::Planner(ros::NodeHandle& nh){
 }
 
 Planner::~Planner(){
-    delete global_costmap;
-    delete _prim_tree;
+
+    if (global_costmap)
+        delete global_costmap;
+
+    if (_prim_tree)
+        delete _prim_tree;
 
     if (safety_thread.joinable()){
         std::cout << "rejoined safety thread" << std::endl;
@@ -253,9 +260,8 @@ void Planner::goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg){
 
 void Planner::occlusionPointscb(const geometry_msgs::PoseArray::ConstPtr& msg){
     _occ_point = Eigen::MatrixXd(2,3);
-    ROS_INFO("HELLO?");
+
     if (msg->poses.size() > 0){
-        ROS_INFO("DOING THINGS?");
         geometry_msgs::Pose p1 = msg->poses[0];
         geometry_msgs::Pose p2 = msg->poses[1];
 
@@ -721,47 +727,20 @@ void Planner::controlLoop(const ros::TimerEvent&){
     unsigned int map_x, map_y;
     _map.worldToMap(_odom(0), _odom(1), map_x, map_y);
 
-    if (!plan()){
+    if (!plan())
         count++;
-
-        // if (_map.getCost(map_x, map_y) == costmap_2d::INSCRIBED_INFLATED_OBSTACLE){
-        //     solverStatePub.publish(solver_state);
-        //     ROS_WARN("robot has entered recovery state");
-
-        //     sentTraj.points.clear();
-
-        //     ROS_WARN("generating motion primitive tree");
-        //     _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
-        //     _prim_tree->update_costmap(global_costmap);
-
-        //     ROS_WARN("finding best trajectory");
-        //     ros::Time s = ros::Time::now();
-        //     _recovery_traj = _prim_tree->find_best_trajectory();
-        //     ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
-
-        //     for(auto node : _recovery_traj)
-        //         std::cout << node->toString() << std::endl;
-
-        //     trajectory_msgs::JointTrajectory msg;
-        //     msg.header.stamp = ros::Time::now();
-        //     msg.header.frame_id = _frame_str;
-
-        //     trajPub.publish(msg);
-        //     recovery_start = ros::Time::now();
-        //     _robo_state = RECOVERY;
-
-        //     count = 0;
-
-        //     return;
-        // }
-    }
     else
         count = 0;
 
-    if (count >= _failsafe_count)
-        plan(true);
-
     solverStatePub.publish(solver_state);
+
+    if (count >= _failsafe_count){
+        if (plan(true))
+            count = 0;
+
+        solverStatePub.publish(solver_state);
+    }
+
 }
 
 /**********************************************************************
@@ -979,6 +958,15 @@ bool Planner::plan(bool is_failsafe){
         return false;
     }
     
+    if (!isInPoly(hPolys[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) )
+        hPolys.insert(hPolys.begin(), corridor::genPoly(*_map, initialPVAJ(0,0), initialPVAJ(1,0)));
+    
+    if (!isInPoly(hPolys.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
+        ROS_WARN("end was not in poly, adding extra polygon to correct this");
+        hPolys.insert(hPolys.end(), corridor::genPoly(*_map, finalPVAJ(0,0), finalPVAJ(1,0)));
+    }
+
+    bool is_in_corridor = false;
 
     // if adjacent polytopes don't overlap, don't plan
     for(int p = 0; p < hPolys.size()-1; p++){
@@ -987,7 +975,19 @@ bool Planner::plan(bool is_failsafe){
             solver_state.status.data = 2;
             return false;
         }
+
+        if (!is_in_corridor)
+            is_in_corridor = isInPoly(hPolys[p], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0)));
     }
+
+    if (!is_in_corridor)
+        ROS_WARN("(%.2f, %.2f) NOT IN CORRIDOR", initialPVAJ(0,0), initialPVAJ(1,0));
+
+    ROS_INFO("%d\t%d",!is_in_corridor, is_failsafe);
+
+
+    solver_state.polys.poses.clear();
+    corridor::corridorToMsg(hPolys, solver_state.polys);
 
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
@@ -1023,8 +1023,9 @@ bool Planner::plan(bool is_failsafe){
         ROS_ERROR("solver could not find trajectory");
         solver_state.status.data = 3;
         return false;
+    } else{
+        std::cout << termcolor::green << "solver found trajectory" << std::endl;
     }
-
 
 
     solver.fillX();
@@ -1090,8 +1091,7 @@ bool Planner::plan(bool is_failsafe){
     // pubCurrPoly();
 
     pubPolys();
-    if (_plan_once)
-        _planned = true;
+    _planned = true;
     
     populateSolverState(solver_state, hPolys, sentTraj, initialPVAJ, finalPVAJ, 0);
 
@@ -1203,6 +1203,7 @@ void populateSolverState(robust_fast_navigation::SolverState& state,
                          const Eigen::MatrixXd& finalPVAJ,
                          int status){
 
+    state.polys.poses.clear();
     corridor::corridorToMsg(hPolys, state.polys);
 
     state.initialPVA.positions = {initialPVAJ(0,0), initialPVAJ(1,0), initialPVAJ(2,0)};
