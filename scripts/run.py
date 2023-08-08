@@ -26,7 +26,7 @@ def shutdown():
     global gazebo_process, nav_stack_process, planner_process
     
     rospy.loginfo("*************** shutting nodes down now! ***************")
-    if bag_process != None:
+    if bag_process is not None:
         bag_process.terminate()
         bag_process.wait()
 
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     with open(args.out, "a") as f:
         f.write("%d %d %d %d %.4f %.4f\n" %(args.world_idx, success, collided, (curr_time - start_time)>=100, curr_time - start_time, nav_metric))
     
-    if bag_process != None:
+    if bag_process is not None:
         bag_process.terminate()
         bag_process.wait()
     
