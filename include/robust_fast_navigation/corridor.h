@@ -827,6 +827,28 @@ namespace corridor{
 
         }
     }
+
+    inline void msgToCorridor(
+        std::vector<Eigen::MatrixX4d>& hPolys,
+        const geometry_msgs::PoseArray& msg
+    ){
+        
+        hPolys.clear();
+        Eigen::MatrixX4d currPoly;
+        for(int i = 0; i < msg.poses.size(); ++i){
+            geometry_msgs::Pose p = msg.poses[i];
+            if (p.orientation.x == 0 && p.orientation.y == 0 && p.orientation.z == 0 && p.orientation.w == 0){
+                if (currPoly.rows() > 0){
+                    hPolys.push_back(currPoly);
+                    currPoly.resize(0,4);
+                }
+            } else {
+                Eigen::Vector4d plane(p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w);
+                currPoly.conservativeResize(currPoly.rows()+1, 4);
+                currPoly.row(currPoly.rows()-1) = plane;
+            }
+        }
+    }
 }
 
 #endif

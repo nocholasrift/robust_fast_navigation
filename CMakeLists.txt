@@ -5,12 +5,13 @@ project(robust_fast_navigation)
 add_compile_options(-std=c++17 -O2 -g)
 
 # Used to tell cmake where FindGUROBI.cmake is
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # Using GUROBI_LIBRARY on it's own isn't enough to get things to compile...
 # Snippet taken from https://github.com/mit-acl/faster/blob/master/faster/CMakeLists.txt
 FILE(GLOB GurobiSOFiles $ENV{GUROBI_HOME}/lib/libgurobi*[0-9]*.so) #files that are start with libgurobi and end with number.so
 set(GUROBI_LIBRARIES "$ENV{GUROBI_HOME}/lib/libgurobi_c++.a;${GurobiSOFiles};" )
+
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -34,11 +35,18 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3 REQUIRED COMPONENTS system)
 find_package(drake REQUIRED)
 find_package(GUROBI REQUIRED)
+find_package(GiNaC REQUIRED)
 
 add_message_files(
       DIRECTORY
       FILES
       SolverState.msg
+      SolverStateArray.msg
+)
+
+add_service_files(
+  FILES
+  SolveFromState.srv
 )
 
 generate_messages(
@@ -63,6 +71,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${DECOMP_UTIL_INCLUDE_DIRS}
   ${GUROBI_INCLUDE_DIRS}
+  ${GINAC_INCLUDE_DIRS}
 )
 
 add_executable(robust_planner src/planner.cpp src/planner_node.cpp src/JPS.cpp)
@@ -77,6 +86,8 @@ add_executable(robust_planner_gurobi src/planner_gurobi.cpp src/solver.cpp src/p
 target_link_libraries(robust_planner_gurobi
   ${catkin_LIBRARIES}
   ${GUROBI_LIBRARIES}
+  ${GINAC_LIBRARIES}
+  ${CLN_LIBRARIES}
   Eigen3::Eigen
   drake::drake
 )
@@ -94,16 +105,27 @@ target_link_libraries(publish_pf_pose
   ${catkin_LIBRARIES}
 )
 
-add_executable(gurobi_solver src/gurobi_solver.cpp)
-target_link_libraries(gurobi_solver
-  ${catkin_LIBRARIES}
-  ${GUROBI_LIBRARIES}
-  drake::drake
-  Eigen3::Eigen
-)
-
 add_executable(primitives src/motion_primitives.cpp)
 target_link_libraries(primitives
   ${catkin_LIBRARIES}
+  Eigen3::Eigen
+)
+
+add_executable(solver_server src/solve_from_state_server.cpp src/solver.cpp)
+target_link_libraries(solver_server
+  ${catkin_LIBRARIES}
+  ${GUROBI_LIBRARIES}
+  ${GINAC_LIBRARIES}
+  ${CLN_LIBRARIES}
+  drake::drake
+  Eigen3::Eigen
+)
+add_dependencies(solver_server ${PROJECT_NAME}_generate_messages)
+
+add_executable(minvo_test src/minvo_basis.cpp)
+target_link_libraries(minvo_test
+  ${catkin_LIBRARIES}
+  ${GINAC_LIBRARIES}
+  ${CLN_LIBRARIES}
   Eigen3::Eigen
 )

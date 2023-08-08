@@ -1,0 +1,6 @@
+# Request
+robust_fast_navigation/SolverState state
+---
+# Response
+uint32 success
+trajectory_msgs/JointTrajectory trajectory

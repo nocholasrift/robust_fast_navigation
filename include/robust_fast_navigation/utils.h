@@ -15,6 +15,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <faster/faster_types.hpp>
+
 
 // struct SolverState{
 //     nav_msgs::Path jpsPath;
@@ -413,7 +415,56 @@ bool getPolyIntersection(const Eigen::MatrixX4d& poly1, const Eigen::MatrixX4d& 
     return true;
 }
 
+/**********************************************************************
+  Function which converts a Trajectory<D> into a JointTrajectory msg.
+  This discretizes the Trajectory<D> and packages it such that the
+  optimizes trajectory can be broadcast over ros to an external 
+  tracking node. 
 
+  Inputs:
+    - JointTrajectory& msg: the message to be populated
+    - traj_dt: the time between each point in the trajectory
+    - frame_str: the frame_id of the trajectory msg
+
+***********************************************************************/
+trajectory_msgs::JointTrajectory convertTrajToMsg(const std::vector<state>& trajectory, double traj_dt, std::string frame_str){
+
+    trajectory_msgs::JointTrajectory msg;
+    msg.header.stamp = ros::Time::now();
+    msg.header.frame_id = frame_str;
+
+    double next_t = 0.;
+    for(int i = 0; i < trajectory.size(); i++){
+        state x = trajectory[i];
+        if(x.t >= next_t){
+            
+            trajectory_msgs::JointTrajectoryPoint p;
+            p.positions.push_back(x.pos(0));
+            p.positions.push_back(x.pos(1));
+            p.positions.push_back(x.pos(2));
+
+            p.velocities.push_back(x.vel(0));
+            p.velocities.push_back(x.vel(1));
+            p.velocities.push_back(x.vel(2));
+
+            p.accelerations.push_back(x.accel(0));
+            p.accelerations.push_back(x.accel(1));
+            p.accelerations.push_back(x.accel(2));
+
+            p.effort.push_back(x.jerk(0));
+            p.effort.push_back(x.jerk(1));
+            p.effort.push_back(x.jerk(2));
+
+            p.time_from_start = ros::Duration(x.t);
+
+            msg.points.push_back(p);
+
+            next_t += traj_dt;
+        }
+    }
+
+    return msg;
+}
 
 
 #endif

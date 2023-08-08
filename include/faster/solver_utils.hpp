@@ -59,6 +59,52 @@ std::vector<GRBLinExpr> MatrixMultiply(const std::vector<std::vector<double>>& A
   return result;
 }
 
+// notice the indices of A[][] are swapped here for the multiplication
+// in hindsight there was probably a more elegant solution than making
+// a whole new method for this...
+template <typename T>
+std::vector<GRBLinExpr> MatrixMultiply(const std::vector<T>& x, const std::vector<std::vector<double>>& A)
+{
+  std::vector<GRBLinExpr> result;
+
+  for (int i = 0; i < x.size(); i++)
+  {
+    GRBLinExpr lin_exp = 0;
+    std::cout << "x has size: " << x.size() << std::endl;
+    for (int m = 0; m < A.size(); m++)
+    {
+      std::cout << m << std::endl;
+      lin_exp = lin_exp + A[m][i] * x[m];
+    }
+    result.push_back(lin_exp);
+  }
+  return result;
+}
+
+// multiply 2 matrices together
+template <typename T, typename U>
+std::vector<std::vector<GRBLinExpr>> Multiply2Matrices(const std::vector<std::vector<U>>& A,
+                                                   const std::vector<std::vector<T>>& B)
+{
+  std::vector<std::vector<GRBLinExpr>> result;
+
+  for (int i = 0; i < A.size(); i++)
+  {
+    std::vector<GRBLinExpr> row;
+    for (int j = 0; j < B[0].size(); j++)
+    {
+      GRBLinExpr lin_exp = 0;
+      for (int m = 0; m < B.size(); m++)
+      {
+        lin_exp = lin_exp + A[i][m] * B[m][j];
+      }
+      row.push_back(lin_exp);
+    }
+    result.push_back(row);
+  }
+  return result;
+}
+
 /*std::vector<GRBLinExpr> MatrixMultiply(const std::vector<std::vector<double>>& A, const std::vector<GRBLinExpr>& x)
 {
   std::vector<GRBLinExpr> result;

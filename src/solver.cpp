@@ -253,6 +253,10 @@ void SolverGurobi::setPolytopesConstraints()
     // std::cout << "NUMBER OF POLYTOPES=" << polytopes_.size() << std::endl;
     // std::cout << "NUMBER OF FACES of the first polytope=" << polytopes_[0].A().rows() << std::endl;
 
+    Eigen::MatrixXd minvo_inv = A_minvo_.inverse();
+    std::vector<std::vector<double>> minvo_inv_std = eigenMatrix2std(minvo_inv);
+    std::vector<std::vector<double>> bezier_std = eigenMatrix2std(A_bezier_);
+
     // Polytope constraints (if binary_varible==1 --> In that polytope) and at_least_1_pol_cons (at least one polytope)
     // constraints
     for (int t = 0; t < N_; t++)  // Start in t=1 (because t=0 is already fixed with the initial condition)
@@ -271,6 +275,34 @@ void SolverGurobi::setPolytopesConstraints()
       std::vector<GRBLinExpr> cp1 = getCP1(t);  // Control Point 1
       std::vector<GRBLinExpr> cp2 = getCP2(t);  // Control Point 2
       std::vector<GRBLinExpr> cp3 = getCP3(t);  // Control Point 3
+
+      std::vector<std::vector<GRBLinExpr>> cps;
+      for (int i = 0; i < cp0.size(); i++)
+      {
+        cps.push_back({
+          cp0[i],
+          cp1[i],
+          cp2[i],
+          cp3[i],
+        });
+      }
+
+      // std::vector<GRBLinExpr> cp0_minvo = MatrixMultiply(MatrixMultiply(cp0, bezier_std), minvo_inv_std);
+      // std::vector<GRBLinExpr> cp1_minvo = MatrixMultiply(MatrixMultiply(cp1, bezier_std), minvo_inv_std);
+      // std::vector<GRBLinExpr> cp2_minvo = MatrixMultiply(MatrixMultiply(cp2, bezier_std), minvo_inv_std);
+      // std::vector<GRBLinExpr> cp3_minvo = MatrixMultiply(MatrixMultiply(cp3, bezier_std), minvo_inv_std);
+      std::vector<std::vector<GRBLinExpr>> cps_minvo = Multiply2Matrices(Multiply2Matrices(cps, bezier_std), minvo_inv_std);
+
+      // std::cout << A_bezier_ << std::endl;
+      // std::cout << A_minvo_ << std::endl;
+      // std::cout << minvo_inv << std::endl;
+
+
+      // exit(0);
+      cp0 = {cps_minvo[0][0], cps_minvo[1][0], cps_minvo[2][0]};
+      cp1 = {cps_minvo[0][1], cps_minvo[1][1], cps_minvo[2][1]};
+      cp2 = {cps_minvo[0][2], cps_minvo[1][2], cps_minvo[2][2]};
+      cp3 = {cps_minvo[0][3], cps_minvo[1][3], cps_minvo[2][3]};
 
       for (int n_poly = 0; n_poly < polytopes_.size(); n_poly++)  // Loop over the number of polytopes
       {
@@ -512,6 +544,11 @@ bool SolverGurobi::genNewTraj()
   {
     trials_ = trials_ + 1;
     findDT(i);
+    std::cout << "dt is " << dt_ << std::endl;
+    // generate MINVO and Bezier conversion matrices
+    A_minvo_ = basis_converter_.get_bernstein_on_interval({0, dt_});
+    A_bezier_ = basis_converter_.get_minvo_on_interval({0, dt_});
+    std::cout << "found matrices" << std::endl;
     // std::cout << "Going to try with dt_= " << dt_ << ", should_terminate_=" << cb_.should_terminate_ << std::endl;
     setPolytopesConstraints();
     // setOcclusionConstraint();
@@ -639,7 +676,7 @@ bool SolverGurobi::callOptimizer()
   try{
     m.optimize();
   } catch(GRBException e){
-    std::cout << e.getMessage() << std::endl;
+    // std::cout << e.getMessage() << std::endl;
   }
   auto end = std::chrono::steady_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
@@ -696,7 +733,7 @@ bool SolverGurobi::callOptimizer()
   else
   {
     // total_not_solved = total_not_solved + 1;
-    std::cout << "TOTAL NOT SOLVED" << total_not_solved << std::endl;
+    // std::cout << "TOTAL NOT SOLVED" << total_not_solved << std::endl;
     // No solution
 
     // m.write("/home/jtorde/Desktop/ws/src/acl-planning/cvx/models/model_rp" + std::to_string(temporal_) +
@@ -704,7 +741,7 @@ bool SolverGurobi::callOptimizer()
     solved = false;
     if (optimstatus == GRB_INF_OR_UNBD)
     {
-      printf("GUROBI SOLUTION: Unbounded or Infeasible. Maybe too small dt?\n");
+      // printf("GUROBI SOLUTION: Unbounded or Infeasible. Maybe too small dt?\n");
 
       /*      m.computeIIS();  // Compute the Irreducible Inconsistent Subsystem and write it on a file
             m.write("/home/jtorde/Desktop/ws/src/acl-planning/cvx/models/model_rp" + std::to_string(temporal_) +
@@ -713,13 +750,13 @@ bool SolverGurobi::callOptimizer()
 
     if (optimstatus == GRB_NUMERIC)
     {
-      printf("GUROBI Status: Numerical issues\n");
-      printf("Model may be infeasible or unbounded\n");  // Taken from the Gurobi documentation
+      // printf("GUROBI Status: Numerical issues\n");
+      // printf("Model may be infeasible or unbounded\n");  // Taken from the Gurobi documentation
     }
 
     if (optimstatus == GRB_INTERRUPTED)
     {
-      printf("GUROBI Status: Interrumped by the user\n");
+      // printf("GUROBI Status: Interrumped by the user\n");
     }
   }
   return solved;
