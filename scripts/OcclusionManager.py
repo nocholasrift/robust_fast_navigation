@@ -527,18 +527,18 @@ class OcclusionManager:
     def generatePublishMsg(self, action, occlusion=None, namespace=None):
 
         mx = my = 0
-        if occlusion != None:
+        if occlusion is not None:
             mx, my = occlusion.mx, occlusion.my
 
         msg = Marker()
         msg.header.frame_id = "map"
         msg.header.stamp = rospy.Time.now()
-        if namespace == None:
+        if namespace is None:
             msg.ns = "occlusion"
         else:
             msg.ns = namespace
         # when counter > buffer_len, we are rewritting old spheres
-        if occlusion != None:
+        if occlusion is not None:
             msg.id = occlusion.iden
         msg.action = action
 
