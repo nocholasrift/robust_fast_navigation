@@ -17,15 +17,8 @@
 
 #include <faster/faster_types.hpp>
 
+#include <robust_fast_navigation/JPS.h>
 
-// struct SolverState{
-//     nav_msgs::Path jpsPath;
-//     geometry_msgs::PoseArray polys;
-
-//     Eigen::Matrix3d initialPVA, finalPVA;
-
-//     bool solved;
-// };
 
 /**********************************************************************
     This function takes in a polygon and shifts all hyperplanes outward
@@ -466,5 +459,59 @@ trajectory_msgs::JointTrajectory convertTrajToMsg(const std::vector<state>& traj
     return msg;
 }
 
+bool solver_boilerplate(bool simplify_jps,
+                        double max_dist_horizon,
+                        const costmap_2d::Costmap2D& _map,
+                        const Eigen::VectorXd& _odom,
+                        Eigen::MatrixXd &initialPVAJ,
+                        Eigen::MatrixXd &finalPVAJ,
+                        std::vector<Eigen::Vector2d>& jpsPath)
+{
+
+    JPSPlan jps;
+    unsigned int sX, sY, eX, eY;
+    _map.worldToMap(initialPVAJ(0,0), initialPVAJ(1,0), sX, sY);
+    _map.worldToMap(finalPVAJ(0,0), finalPVAJ(1,0), eX, eY);
+
+    jps.set_start(sX, sY);
+    jps.set_destination(eX, eY);
+    jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+
+    jps.set_map(_map.getCharMap(), _map.getSizeInCellsX(), _map.getSizeInCellsY(),
+                _map.getOriginX(), _map.getOriginY(), _map.getResolution());
+    jps.JPS();
+
+    jpsPath = jps.getPath(simplify_jps);
+    if (jpsPath.size() == 0)
+        return false;
+
+    // check if JPS path intersects with sphere
+    std::vector<Eigen::Vector2d> newJPSPath;
+    Eigen::Vector2d goalPoint;
+
+    // ROS_WARN("checking sphere intersection");
+    if (getJPSIntersectionWithSphere(
+        jpsPath, 
+        newJPSPath,
+        Eigen::Vector2d(_odom[0], _odom[1]),
+        max_dist_horizon, goalPoint)){
+
+        jpsPath = newJPSPath;
+
+        if (finalPVAJ.cols() == 4){
+            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero(),
+                Eigen::Vector3d::Zero();
+        } else{
+            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+                Eigen::Vector3d::Zero(), 
+                Eigen::Vector3d::Zero();
+        }
+    }
+
+
+    return true;
+}
 
 #endif

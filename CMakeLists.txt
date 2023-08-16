@@ -111,7 +111,7 @@ target_link_libraries(primitives
   Eigen3::Eigen
 )
 
-add_executable(solver_server src/solve_from_state_server.cpp src/solver.cpp)
+add_executable(solver_server src/solve_from_state_server.cpp src/solver.cpp src/JPS.cpp)
 target_link_libraries(solver_server
   ${catkin_LIBRARIES}
   ${GUROBI_LIBRARIES}

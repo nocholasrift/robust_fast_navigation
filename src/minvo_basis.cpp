@@ -10,19 +10,18 @@ class BasisConverter{
 public:
     BasisConverter(){
         // Digits = 20;
-        // initialize the bezier basis matrix on the interval [0,1]
-        A_bezier = Eigen::MatrixXd(4,4);
-        A_bezier << -1, 3, -3, 1,
-                    3, -6, 3, 0,
-                    -3, 3, 0, 0,
-                    1, 0, 0, 0;
 
-        // initialize the minvo basis matrix on the interval [-1,1]
-        A_minvo = Eigen::MatrixXd(4,4);
-        A_minvo <<  -0.43020000000000,    0.45680000000000,   -0.02700000000000,    0.00040000000000,
+        // initialize the minvo position basis matrix on the interval [-1,1]
+        A_minvo_pos = Eigen::MatrixXd(4,4);
+        A_minvo_pos <<  -0.43020000000000,    0.45680000000000,   -0.02700000000000,    0.00040000000000,
                     0.83490000000000,   -0.45680000000000,   -0.79210000000000,    0.49960000000000,
                     -0.83490000000000,   -0.45680000000000,    0.79210000000000,    0.49960000000000,
                     0.43020000000000,    0.45680000000000,    0.02700000000000,    0.00040000000000;
+
+        A_minvo_vel = Eigen::MatrixXd(3,3);
+        A_minvo_vel <<  0.3750,   -0.4330,  0.1250,
+                        -0.7500,   0,       0.7500,
+                        0.3750,    0.4330,  0.1250;
         
         // roots of lambda polynomial
         roots_lambda = {
@@ -68,6 +67,38 @@ public:
         return A_conv;
     }
 
+    Eigen::MatrixXd get_vel_bernstein_on_interval(const std::vector<double>& int2){
+
+        std::vector<double> int1 = {0,1};
+        
+        // Initialize GiNaC symbols
+        symbol t("t");
+
+        // Define transformation from interval 1 to interval 2
+        ex u = (int1[1]-int1[0])/(int2[1]-int2[0])*(t-int2[0])+int1[0];
+
+        // Define Bernstein basis polynomials
+        ex B1 = (u-1)*(u-1);
+        ex B2 = -2*u*(u-1);
+        ex B3 = u*u;
+
+        ex B1_poly = B1.expand();
+        ex B2_poly = B2.expand();
+        ex B3_poly = B3.expand();
+
+
+        std::vector<ex> B_coeffs = {B1_poly, B2_poly, B3_poly};
+        Eigen::MatrixXd A_conv(3,3);
+
+        for(int i = 0; i < B_coeffs.size(); ++i){
+            ex B = B_coeffs[i];
+            for (int deg = 2; deg >= 0; --deg)
+                A_conv(i,2-deg) = ex_to<numeric>(B.coeff(t,deg)).to_double();
+        }
+
+        return A_conv;
+    }
+
     Eigen::MatrixXd get_minvo_on_interval(const std::vector<double>& int2){
         std::vector<double> int1 = {-1,1};
 
@@ -83,10 +114,10 @@ public:
 
         Eigen::MatrixXd A_conv(4,4);
         std::vector<ex> polynomials;
-        for (int row = 0; row < A_minvo.rows(); ++row){
+        for (int row = 0; row < A_minvo_pos.rows(); ++row){
             polynomials.push_back(0);
             for(int i = 0; i < T.size(); ++i)
-                polynomials[row] += A_minvo(row,i)*T[i];
+                polynomials[row] += A_minvo_pos(row,i)*T[i];
 
             for(int deg = 3; deg >= 0; --deg)
                 A_conv(row,3-deg) = ex_to<numeric>(polynomials[row].expand().coeff(t,deg)).to_double();
@@ -96,8 +127,36 @@ public:
     }
 
 
+    Eigen::MatrixXd get_vel_minvo_on_interval(const std::vector<double>& int2){
+        std::vector<double> int1 = {-1,1};
+
+        symbol t("t");
+        ex u = (int1[1]-int1[0])/(int2[1]-int2[0])*(t-int2[0])+int1[0];
+
+        std::vector<ex> T = {
+            u*u,
+            u,
+            1
+        };
+
+
+        Eigen::MatrixXd A_conv(3,3);
+        std::vector<ex> polynomials;
+        for (int row = 0; row < A_minvo_vel.rows(); ++row){
+            polynomials.push_back(0);
+            for(int i = 0; i < T.size(); ++i)
+                polynomials[row] += A_minvo_vel(row,i)*T[i];
+
+            for(int deg = 2; deg >= 0; --deg)
+                A_conv(row,2-deg) = ex_to<numeric>(polynomials[row].expand().coeff(t,deg)).to_double();
+        }
+
+        return A_conv;
+    }
+
+
 protected:
-    Eigen::MatrixXd A_minvo, A_bezier;
+    Eigen::MatrixXd A_minvo_pos, A_minvo_vel;
     std::vector<Eigen::Vector2d> roots_lambda;
 };
 
@@ -115,9 +174,11 @@ int main() {
     Eigen::MatrixXd minvo_matrix = bc.get_minvo_on_interval({0,.695378});
     Eigen::MatrixXd converted = poly*minvo_matrix.inverse();
 
-    std::cout << bezier_matrix << std::endl;
-    std::cout << "********************" << std::endl;
-    std::cout << minvo_matrix << std::endl;
+    Eigen::MatrixXd A_bezier_vel = bc.get_vel_bernstein_on_interval({-1,1});
+    Eigen::MatrixXd A_minvo_vel = bc.get_vel_minvo_on_interval({0,3});
+
+    std::cout << A_bezier_vel << std::endl;
+    // std::cout << A_minvo_vel << std::endl;
     // std::cout << converted << std::endl;
     return 0;
 }

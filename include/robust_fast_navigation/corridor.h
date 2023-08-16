@@ -491,19 +491,17 @@ namespace corridor{
         }
     }
 
-    inline bool createCorridorJPS(
-        const std::vector<Eigen::Vector2d>& path, const costmap_2d::Costmap2D& _map,
-        const vec_Vec2f& _obs, std::vector<Eigen::MatrixX4d>& polys){
+    inline bool createCorridorJPS(  const std::vector<Eigen::Vector2d>& path,
+                                    const costmap_2d::Costmap2D& _map,
+                                    std::vector<Eigen::MatrixX4d>& polys,
+                                    const Eigen::MatrixXd& initialPVAJ,
+                                    const Eigen::MatrixXd& finalPVAJ){
 
         polys.clear();
         std::vector<Eigen::Vector3d> path3d, obs3d;
         for(Eigen::Vector2d p : path){
             path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
         }
-
-        // for(Vec2f ob : getPaddedScan(_map, path[0][0], path[0][1], _obs)){
-        //     obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
-        // }
 
         for(Vec2f ob : getOccupied(_map)){
             obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
@@ -514,8 +512,6 @@ namespace corridor{
         double w = _map.getSizeInMetersX();
         double h = _map.getSizeInMetersY();
 
-        // ROS_INFO("(%.2f, %.2f) --> (%.2f, %.2f)", x, y, x+w, y+h);
-        // exit(0);
         bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x,y,-.1), 
             Eigen::Vector3d(x+w,y+h,.1),7.0, 5.0, polys);
 
@@ -523,6 +519,16 @@ namespace corridor{
             return false;
 
         shortCut(polys);
+
+        if (!isInPoly(polys[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) ){
+            // ROS_WARN("end was not in poly, adding extra polygon to correct this");
+            polys.insert(polys.begin(), corridor::genPoly(_map, initialPVAJ(0,0), initialPVAJ(1,0)));
+        }
+        
+        if (!isInPoly(polys.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
+            // ROS_WARN("end was not in poly, adding extra polygon to correct this");
+            polys.insert(polys.end(), corridor::genPoly(_map, finalPVAJ(0,0), finalPVAJ(1,0)));
+        }
         
         return true;
 

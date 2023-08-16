@@ -12,20 +12,7 @@
 #include <unistd.h>
 #include <ros/package.h>
 
-mycallback::mycallback()
-{
-  should_terminate_ = false;
-}
 
-void mycallback::callback()
-{  // This function is called periodically along the optimization process.
-  //  It is called several times more after terminating the program
-  if (should_terminate_ == true)
-  {
-    GRBCallback::abort();  // This function only does effect when inside the function callback() of this class
-    // terminated_ = true;
-  }
-}
 
 void SolverGurobi::StopExecution()
 {
@@ -45,13 +32,12 @@ SolverGurobi::SolverGurobi()
   v_max_ = 5;
   a_max_ = 3;
   j_max_ = 5;
+  max_solver_time = .2;
   // N_ = 10;  // Segments: 0,1,...,N_-1
 
   m.set(GRB_StringAttr_ModelName, "planning");
-
-  cb_ = mycallback();
-
   m.setCallback(&cb_);  // The callback will be called periodically along the optimization
+
 }
 
 void SolverGurobi::setN(int N)
@@ -253,9 +239,18 @@ void SolverGurobi::setPolytopesConstraints()
     // std::cout << "NUMBER OF POLYTOPES=" << polytopes_.size() << std::endl;
     // std::cout << "NUMBER OF FACES of the first polytope=" << polytopes_[0].A().rows() << std::endl;
 
-    Eigen::MatrixXd minvo_inv = A_minvo_.inverse();
-    std::vector<std::vector<double>> minvo_inv_std = eigenMatrix2std(minvo_inv);
-    std::vector<std::vector<double>> bezier_std = eigenMatrix2std(A_bezier_);
+    Eigen::MatrixXd minvo_inv;
+    std::vector<std::vector<double>> minvo_inv_std;
+    std::vector<std::vector<double>> bezier_std;
+
+    if (use_minvo_){
+      A_minvo_ = basis_converter_.get_pos_bernstein_on_interval({0, dt_});
+      A_bezier_ = basis_converter_.get_pos_minvo_on_interval({0, dt_});
+
+      minvo_inv = A_minvo_.inverse();
+      minvo_inv_std = eigenMatrix2std(minvo_inv);
+      bezier_std = eigenMatrix2std(A_bezier_);
+    }
 
     // Polytope constraints (if binary_varible==1 --> In that polytope) and at_least_1_pol_cons (at least one polytope)
     // constraints
@@ -276,33 +271,25 @@ void SolverGurobi::setPolytopesConstraints()
       std::vector<GRBLinExpr> cp2 = getCP2(t);  // Control Point 2
       std::vector<GRBLinExpr> cp3 = getCP3(t);  // Control Point 3
 
-      std::vector<std::vector<GRBLinExpr>> cps;
-      for (int i = 0; i < cp0.size(); i++)
-      {
-        cps.push_back({
-          cp0[i],
-          cp1[i],
-          cp2[i],
-          cp3[i],
-        });
+
+      if (use_minvo_){
+        std::vector<std::vector<GRBLinExpr>> cps;
+        for (int i = 0; i < cp0.size(); i++)
+        {
+          cps.push_back({
+            cp0[i],
+            cp1[i],
+            cp2[i],
+            cp3[i],
+          });
+        }
+
+        std::vector<std::vector<GRBLinExpr>> cps_minvo = Multiply2Matrices(Multiply2Matrices(cps, bezier_std), minvo_inv_std);
+        cp0 = {cps_minvo[0][0], cps_minvo[1][0], cps_minvo[2][0]};
+        cp1 = {cps_minvo[0][1], cps_minvo[1][1], cps_minvo[2][1]};
+        cp2 = {cps_minvo[0][2], cps_minvo[1][2], cps_minvo[2][2]};
+        cp3 = {cps_minvo[0][3], cps_minvo[1][3], cps_minvo[2][3]};
       }
-
-      // std::vector<GRBLinExpr> cp0_minvo = MatrixMultiply(MatrixMultiply(cp0, bezier_std), minvo_inv_std);
-      // std::vector<GRBLinExpr> cp1_minvo = MatrixMultiply(MatrixMultiply(cp1, bezier_std), minvo_inv_std);
-      // std::vector<GRBLinExpr> cp2_minvo = MatrixMultiply(MatrixMultiply(cp2, bezier_std), minvo_inv_std);
-      // std::vector<GRBLinExpr> cp3_minvo = MatrixMultiply(MatrixMultiply(cp3, bezier_std), minvo_inv_std);
-      std::vector<std::vector<GRBLinExpr>> cps_minvo = Multiply2Matrices(Multiply2Matrices(cps, bezier_std), minvo_inv_std);
-
-      // std::cout << A_bezier_ << std::endl;
-      // std::cout << A_minvo_ << std::endl;
-      // std::cout << minvo_inv << std::endl;
-
-
-      // exit(0);
-      cp0 = {cps_minvo[0][0], cps_minvo[1][0], cps_minvo[2][0]};
-      cp1 = {cps_minvo[0][1], cps_minvo[1][1], cps_minvo[2][1]};
-      cp2 = {cps_minvo[0][2], cps_minvo[1][2], cps_minvo[2][2]};
-      cp3 = {cps_minvo[0][3], cps_minvo[1][3], cps_minvo[2][3]};
 
       for (int n_poly = 0; n_poly < polytopes_.size(); n_poly++)  // Loop over the number of polytopes
       {
@@ -310,11 +297,6 @@ void SolverGurobi::setPolytopesConstraints()
         int cols = polytopes_[n_poly].cols();
         Eigen::MatrixXd A1 = polytopes_[n_poly].leftCols(cols-1);
         Eigen::VectorXd bb = -polytopes_[n_poly].rightCols(1);
-        // Eigen::MatrixXd A1 = polytopes_[n_poly].A();
-        // auto bb = polytopes_[n_poly].b();
-
-        // std::cout << "Using A1=" << A1 << std::endl;
-        // std::cout << "Using bb=" << bb << std::endl;
 
         std::vector<std::vector<double>> A1std = eigenMatrix2std(A1);
 
@@ -413,6 +395,11 @@ void SolverGurobi::setConstraintsXf()
   }
 }
 
+void SolverGurobi::setUseMinvo(bool use_minvo)
+{
+  use_minvo_ = use_minvo;
+}
+
 void SolverGurobi::setConstraintsX0()
 {
   // Remove previous initial constraints
@@ -446,9 +433,46 @@ void SolverGurobi::resetX()
 
 void SolverGurobi::setMaxConstraints()
 {
+
+  Eigen::MatrixXd A_minvo_vel_ = basis_converter_.get_vel_bernstein_on_interval({0, dt_});
+  Eigen::MatrixXd A_bezier_vel_ = basis_converter_.get_vel_minvo_on_interval({0, dt_});
+
+  Eigen::MatrixXd minvo_vel_inv = A_minvo_vel_.inverse();
+  std::vector<std::vector<double>> minvo_vel_inv_std = eigenMatrix2std(minvo_vel_inv);
+  std::vector<std::vector<double>> bezier_vel_std = eigenMatrix2std(A_bezier_vel_);
+
   // Constraint v<=vmax, a<=amax, u<=umax
   for (int t = 0; t < N_; t++)
   {
+    // get control points for segment
+    std::vector<GRBLinExpr> cp0 = getCP0(t);
+    std::vector<GRBLinExpr> cp1 = getCP1(t);
+    std::vector<GRBLinExpr> cp2 = getCP2(t);
+    std::vector<GRBLinExpr> cp3 = getCP3(t);
+
+    // get control points for velocity curve of segment
+    std::vector<std::vector<GRBLinExpr>> cvs;
+    for(int i = 0; i < 3; i++){
+      cvs.push_back({
+        3*(cp1[i] - cp0[i])/dt_,
+        3*(cp2[i] - cp1[i])/dt_,
+        3*(cp3[i] - cp2[i])/dt_
+      });
+    }
+    
+    std::vector<std::vector<GRBLinExpr>> cvs_minvo = Multiply2Matrices(Multiply2Matrices(cvs, bezier_vel_std), minvo_vel_inv_std);
+    // std::vector<GRBLinExpr> cv0_minvo = {cps_minvo[0][0], cps_minvo[1][0], cps_minvo[2][0]};
+    // std::vector<GRBLinExpr> cv1_minvo = {cps_minvo[0][1], cps_minvo[1][1], cps_minvo[2][1]};
+    // std::vector<GRBLinExpr> cv2_minvo = {cps_minvo[0][2], cps_minvo[1][2], cps_minvo[2][2]};
+
+    // add max vel constraints on minvo points
+    // for(int cp = 0; cp < 3; ++cp){
+    //   for(int axis = 0; axis < 3; ++axis){
+    //     m.addConstr(cvs_minvo[axis][cp] <= v_max_, "MaxVel_t" + std::to_string(t) + "_axis_" + std::to_string(axis) + "_cp_" + std::to_string(cp));
+    //     m.addConstr(cvs_minvo[axis][cp] >= -v_max_, "MinVel_t" + std::to_string(t) + "_axis_" + std::to_string(axis) + "_cp_" + std::to_string(cp));
+    //   }
+    // }
+
     for (int i = 0; i < 3; i++)
     {
       m.addConstr(getVel(t, 0, i) <= v_max_, "MaxVel_t" + std::to_string(t) + "_axis_" + std::to_string(i));
@@ -469,7 +493,7 @@ void SolverGurobi::setBounds(double max_values[3])
   a_max_ = max_values[1];
   j_max_ = max_values[2];
 
-  setMaxConstraints();
+  // setMaxConstraints();
 }
 
 void SolverGurobi::setFactorInitialAndFinalAndIncrement(double factor_initial, double factor_final,
@@ -537,19 +561,27 @@ bool SolverGurobi::genNewTraj()
     std::cout << "factor_initial_ is less than one, it doesn't make sense" << std::endl;
   }
 
-  runtime_ms_ = 0;
-
-  for (double i = factor_initial_; i <= factor_final_ && solved == false && cb_.should_terminate_ == false;
-       i = i + factor_increment_)
+  runtime_s_ = 0;
+  int count = 0;
+  for (double i = factor_initial_; i <= factor_final_ && solved == false; i = i + factor_increment_)
   {
+    if (runtime_s_ > max_solver_time)
+    {
+      std::cout << red <<  "SolverGurobi::genNewTraj() - Solver took too long, returning false" << std::endl;
+      return false;
+    }
+
+    // setup callback to terminate optimization if it takes too long
+    // the entire process should be less than max_solver_time
+    cb_.set_timeout(max_solver_time-runtime_s_);
+    m.setCallback(&cb_);
+    // std::cout << "timeout time is " << max_solver_time-runtime_s_ << std::endl;
+
     trials_ = trials_ + 1;
     findDT(i);
-    std::cout << "dt is " << dt_ << std::endl;
     // generate MINVO and Bezier conversion matrices
-    A_minvo_ = basis_converter_.get_bernstein_on_interval({0, dt_});
-    A_bezier_ = basis_converter_.get_minvo_on_interval({0, dt_});
-    std::cout << "found matrices" << std::endl;
     // std::cout << "Going to try with dt_= " << dt_ << ", should_terminate_=" << cb_.should_terminate_ << std::endl;
+    setMaxConstraints();
     setPolytopesConstraints();
     // setOcclusionConstraint();
     setConstraintsX0();
@@ -574,9 +606,8 @@ bool SolverGurobi::genNewTraj()
     {
       // std::cout << "Factor= " << i << "(dt_= " << dt_ << ")---> didn't worked" << std::endl;
     }
-  }
 
-  cb_.should_terminate_ = false;  // Should be at the end of genNewTaj, not at the beginning
+  }
 
   return solved;
 }
@@ -679,12 +710,11 @@ bool SolverGurobi::callOptimizer()
     // std::cout << e.getMessage() << std::endl;
   }
   auto end = std::chrono::steady_clock::now();
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-  // std::cout << "*************************Finished Optimization: " << elapsed << " ms" << std::endl;
-  // std::cout << "*************************Gurobi RUNTIME: " << m.get(GRB_DoubleAttr_Runtime) * 1000 << " ms"
-  //          << std::endl;
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() / 1000.0;
+  // std::cout << "*************************Finished Optimization: " << elapsed << " s" << std::endl;
+  // std::cout << "*************************Gurobi RUNTIME: " << m.get(GRB_DoubleAttr_Runtime) << " s" << std::endl;
 
-  runtime_ms_ = runtime_ms_ + m.get(GRB_DoubleAttr_Runtime) * 1000;
+  runtime_s_ = runtime_s_ + m.get(GRB_DoubleAttr_Runtime);
 
   /*  times_log.open("/home/jtorde/Desktop/ws/src/acl-planning/faster/models/times_log.txt", std::ios_base::app);
     times_log << elapsed << "\n";
@@ -756,7 +786,7 @@ bool SolverGurobi::callOptimizer()
 
     if (optimstatus == GRB_INTERRUPTED)
     {
-      // printf("GUROBI Status: Interrumped by the user\n");
+      printf("GUROBI Status: Interrumped by the user\n");
     }
   }
   return solved;

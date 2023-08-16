@@ -12,7 +12,6 @@
 #include <geometry_msgs/PoseArray.h>
 #include <tf2_ros/transform_listener.h>
 
-#include <robust_fast_navigation/JPS.h>
 #include <robust_fast_navigation/utils.h>
 #include <robust_fast_navigation/spline.h>
 #include <robust_fast_navigation/corridor.h>
@@ -36,12 +35,14 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/planner_frequency", _dt, .1);
     nh.param("robust_planner/max_velocity", _max_vel, 1.);
     nh.param("robust_planner/plan_once", _plan_once, false);
+    nh.param("robust_planner/use_minvo", _use_minvo, false);
     nh.param("robust_planner/const_factor", _const_factor, 6.);
     nh.param("robust_planner/plan_in_free", _plan_in_free, false);
     nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
-    nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/barn_goal_dist", _barn_goal_dist, 10.);
+    nh.param("robust_planner/recovery_thresh", _recovery_thresh, .5);
+    nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
     nh.param("robust_planner/enable_recovery", _enable_recovery, true);
 
@@ -106,6 +107,12 @@ Planner::Planner(ros::NodeHandle& nh){
     candidatePointsVizPub = 
         nh.advertise<visualization_msgs::MarkerArray>("/candidatePointsViz", 0);
 
+    recoveryGoalPub = 
+        nh.advertise<geometry_msgs::PoseStamped>("/recoveryGoal", 0);
+
+    // Services
+    estop_client = nh.serviceClient<std_srvs::Empty>("/switch_mode");
+
     // Subscribers
     mapSub = nh.subscribe("/map", 1, &Planner::mapcb, this);
     goalSub = nh.subscribe("/planner_goal", 1, &Planner::goalcb, this);
@@ -115,6 +122,7 @@ Planner::Planner(ros::NodeHandle& nh){
     predictionsSub = nh.subscribe("/inference", 1, &Planner::predictionscb, this);
     clickedPointSub = nh.subscribe("/clicked_point", 1, &Planner::clickedPointcb, this);
     pathSub = nh.subscribe("/global_planner/planner/plan", 1, &Planner::globalPathcb, this);
+    mpcGoalReachedSub = nh.subscribe("/mpc_goal_reached", 1, &Planner::mpcGoalReachedcb, this);
 
     // Timers
     goalTimer = nh.createTimer(ros::Duration(_dt/2.0), &Planner::goalLoop, this);
@@ -133,11 +141,13 @@ Planner::Planner(ros::NodeHandle& nh){
     _is_costmap_started = false;
     
     // atomics
+    _mpc_goal_reached = false;
     _primitives_ready = false;
     _predictions_ready = false;
     _generate_primitives = false;
 
     _robo_state = NOMINAL;
+    // _robo_state = RECOVERY;
 
     _prev_jps_cost = -1;
 
@@ -157,6 +167,7 @@ Planner::Planner(ros::NodeHandle& nh){
     solver.setThreads(0);
     solver.setWMax(4.0);
     solver.setVerbose(0);
+    solver.setUseMinvo(_use_minvo);
 }
 
 Planner::~Planner(){
@@ -433,14 +444,22 @@ void Planner::globalPathcb(const nav_msgs::Path::ConstPtr& msg){
 
 void Planner::predictionscb(const std_msgs::Float32MultiArray::ConstPtr& msg){
     ROS_WARN("Predictions received!");
+    _predictions.clear();
     _predictions.resize(msg->layout.dim[0].size);
     for(int i = 0; i < msg->layout.dim[0].size; i+=msg->layout.dim[0].stride)
         _predictions[i] = msg->data[i];
 
-
     std::unique_lock<std::mutex> lock(_predictions_mutex);
     _predictions_ready.store(true);
     _predictions_cv.notify_one();
+}
+
+void Planner::mpcGoalReachedcb(const std_msgs::Bool::ConstPtr& msg){
+    if (msg->data){
+        ROS_WARN("MPC GOAL REACHED");
+        _mpc_goal_reached.store(true);
+        _mpc_goal_cv.notify_one();
+    }
 }
 
 /**********************************************************************
@@ -520,22 +539,31 @@ void Planner::buildPrimitiveTree(){
     std::vector<std::string> wrong_right = {"incorrectly", "correctly"};
     std::vector<std::string> pass_fail = {"succeed", "fail"};
 
+  
     while (ros::ok){
 
-        if (_robo_state == NOMINAL || _primitives_ready.load())
+        if (_robo_state == NOMINAL || _primitives_ready.load()){
+            ros::Duration(.2).sleep();
             continue;
+        }
         
         if (!_is_init || _obs.size() == 0 || !_is_goal_set){
             std::cout << "Waiting for initialization, obstacles, and goal" 
                             << _is_init << " " <<  _obs.size() << " " << _is_goal_set << "\r";
+            ros::Duration(.2).sleep();
             continue;
         }
+
+        // switch mpc mode
+        ROS_INFO("switching mpc mode");
+        std_srvs::Empty::Request req;
+        std_srvs::Empty::Response resp;
+        estop_client.call(req, resp);
 
         // hold recovery lock when building tree, this will prevent the
         // motion primitives execution loop from running until tree is generated.
         // std::unique_lock<std::mutex> recovery_lock(_recovery_mutex);
         // _generate_primitive_cv.wait(recovery_lock, [this] {return _generate_primitives.load(); });
-
 
         // get map from costmap
         costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
@@ -557,7 +585,6 @@ void Planner::buildPrimitiveTree(){
         drake::geometry::optimization::HPolyhedron poly_drake(A, b1);
         drake::RandomGenerator generator(rd());
 
-
         ROS_WARN("beginning sampling");
         while(!found_recovery_point && max_iterations-- > 0){
             
@@ -573,72 +600,39 @@ void Planner::buildPrimitiveTree(){
                 Eigen::MatrixXd initialPVAJ(3,4);
                 Eigen::MatrixXd finalPVAJ(3,4);
 
-                // ROS_WARN_STREAM("initial: " << sample.transpose());
                 initialPVAJ << Eigen::Vector3d(sample(0), sample(1),0), 
                                 Eigen::Vector3d::Zero(), 
                                 Eigen::Vector3d::Zero(),
                                 Eigen::Vector3d::Zero();
 
-                // ROS_WARN_STREAM("final: " << goal.transpose());
                 finalPVAJ << Eigen::Vector3d(goal(0),goal(1),0), 
                                 Eigen::Vector3d::Zero(), 
                                 Eigen::Vector3d::Zero(),
                                 Eigen::Vector3d::Zero();
 
-                // ROS_WARN("JPS");
-                // run JPS
-                JPSPlan jps;
-                unsigned int sX, sY, eX, eY;
-                _map->worldToMap(sample[0], sample[1], sX, sY);
-                _map->worldToMap(goal[0], goal[1], eX, eY);
-
-                jps.set_start(sX, sY);
-                jps.set_destination(eX, eY);
-                jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
-
-                jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY(),
-                            _map->getOriginX(), _map->getOriginY(), _map->getResolution());
-                jps.JPS();
-
-                std::vector<Eigen::Vector2d> jpsPath = jps.getPath(_simplify_jps);
-                if (jpsPath.size() == 0)
-                    continue;
-
-                // check if JPS path intersects with sphere
-                std::vector<Eigen::Vector2d> newJPSPath;
-                Eigen::Vector2d goalPoint;
-
-                // ROS_WARN("checking sphere intersection");
-                if (getJPSIntersectionWithSphere(
-                    jpsPath, 
-                    newJPSPath,
-                    Eigen::Vector2d(_odom[0], _odom[1]),
-                    _max_dist_horizon, goalPoint)){
-
-                    jpsPath = newJPSPath;
-
-                    finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
-                        Eigen::Vector3d::Zero(), 
-                        Eigen::Vector3d::Zero(),
-                        Eigen::Vector3d::Zero();
-                }
-
-                // ROS_WARN("Making corridor");
-                // create corridor
+                std::vector<Eigen::Vector2d> jpsPath;
                 std::vector<Eigen::MatrixX4d> polys_corridor;
-                if (!corridor::createCorridorJPS(jpsPath, *_map, _obs, polys_corridor))
+
+                bool success = solver_boilerplate(_simplify_jps,
+                                                  _max_dist_horizon,
+                                                  *_map,
+                                                  _odom,
+                                                  initialPVAJ, 
+                                                  finalPVAJ,
+                                                  jpsPath);
+                                                  
+                if (!success)
                     continue;
 
-                // ROS_WARN("checking corridor");
-                if (!isInPoly(polys_corridor[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) ){
-                    ROS_WARN("end was not in poly, adding extra polygon to correct this");
-                    polys_corridor.insert(polys_corridor.begin(), corridor::genPoly(*_map, initialPVAJ(0,0), initialPVAJ(1,0)));
-                }
+                if (polys_corridor.size() > 4 || 
+                    !corridor::createCorridorJPS(jpsPath, 
+                                                 *_map, 
+                                                 polys_corridor,
+                                                 initialPVAJ,
+                                                 finalPVAJ)
+                    )
+                    continue;
                 
-                if (!isInPoly(polys_corridor.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
-                    ROS_WARN("end was not in poly, adding extra polygon to correct this");
-                    polys_corridor.insert(polys_corridor.end(), corridor::genPoly(*_map, finalPVAJ(0,0), finalPVAJ(1,0)));
-                }
 
                 if (polys_corridor.size() > 4)
                     continue;
@@ -654,7 +648,6 @@ void Planner::buildPrimitiveTree(){
                 if (!is_overlap)
                     continue;
 
-                // ROS_WARN("populating state");
                 // populate SolverState
                 robust_fast_navigation::SolverState state;
                 corridor::corridorToMsg(polys_corridor, state.polys);
@@ -667,7 +660,6 @@ void Planner::buildPrimitiveTree(){
                 state.finalPVA.accelerations = {finalPVAJ(0,2), finalPVAJ(1,2), finalPVAJ(2,2)};
 
                 states.states.push_back(state);
-
             }
 
             // By this point we have the 10 samples to try, publish them to inference node
@@ -678,12 +670,14 @@ void Planner::buildPrimitiveTree(){
             std::unique_lock<std::mutex> predictions_lock(_predictions_mutex);
             _predictions_cv.wait(predictions_lock, [this] {return _predictions_ready.load(); });
 
+            ROS_INFO("generating prediciton visualization msg");
             // check if any predictions are valid and package them in marker array
             // marker array of spheres, size of sphere will represent probability
             visualization_msgs::MarkerArray predictions_msg;
             predictions_msg.markers.resize(_predictions.size());
 
             bool is_valid = false;
+            Eigen::Vector2d g;
             for(int i = 0; i < _predictions.size(); i++){
                 double x = states.states[i].initialPVA.positions[0];
                 double y = states.states[i].initialPVA.positions[1];
@@ -699,25 +693,29 @@ void Planner::buildPrimitiveTree(){
                 marker.pose.position.y = y;
                 marker.pose.position.z = 0;
                 marker.pose.orientation.w = 1;
-                marker.scale.x = 0.5;
-                marker.scale.y = 0.5;
-                marker.scale.z = 0.5;
-                marker.color.a = 1.0;
 
                 int prediction = 1;
+                double confidence = _predictions[i];
                 if (_predictions[i] < 0.5){
+                    g = Eigen::Vector2d(x,y);
+                    confidence = 1 - _predictions[i];
                     prediction = 0;
                     marker.color.g = 1.0;
                     is_valid = true;
                 } else
                     marker.color.r = 1.0;
 
-                ROS_WARN("%s found %s prediction at (%.2f, %.2f)",
-                        wrong_right[solveFromSolverState(states.states[i])==1-_predictions[i]].c_str(),
-                        pass_fail[prediction].c_str(),
-                        states.states[i].initialPVA.positions[0],
-                        states.states[i].initialPVA.positions[1],
-                        solveFromSolverState(states.states[i]));
+                marker.scale.x = 0.5*confidence;
+                marker.scale.y = 0.5*confidence;
+                marker.scale.z = 0.5*confidence;
+                marker.color.a = 1.0;
+
+
+                // ROS_WARN("%s found %s prediction at (%.2f, %.2f)",
+                //         wrong_right[solveFromSolverState(states.states[i])==1-prediction].c_str(),
+                //         pass_fail[prediction].c_str(),
+                //         states.states[i].initialPVA.positions[0],
+                //         states.states[i].initialPVA.positions[1]);
 
                 predictions_msg.markers[i] = marker;
             }
@@ -726,13 +724,22 @@ void Planner::buildPrimitiveTree(){
             ROS_INFO("Publishing predictions");
             candidatePointsVizPub.publish(predictions_msg);
 
-            ROS_INFO("done publishing predictions");
+            ROS_INFO("done publishing predictions %d", is_valid);
             // set predictions_ready to false and leave loop if valid predictions found
             if (is_valid){
                 found_recovery_point = true;
-                std::unique_lock<std::mutex> predictions_lock(_predictions_mutex);
                 _predictions_ready.store(false);
-                exit(0);
+
+                recovery_point = Eigen::Vector2d(g(0), g(1));
+
+                geometry_msgs::PoseStamped recoveryGoal;
+                recoveryGoal.header.frame_id = _frame_str;
+                recoveryGoal.header.stamp = ros::Time::now();
+                recoveryGoal.pose.position.x = g(0);
+                recoveryGoal.pose.position.y = g(1);
+                recoveryGoalPub.publish(recoveryGoal);
+
+                break;
             }
             
             // if no valid predictions, try again after a short wait
@@ -740,25 +747,45 @@ void Planner::buildPrimitiveTree(){
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
+        // wait until mpc_goal is reached
+        ROS_WARN("waiting for mpc goal to be reached");
+        std::unique_lock<std::mutex> mpc_goal_lock(_mpc_goal_mutex);
+        _mpc_goal_cv.wait(mpc_goal_lock, [this] {return _mpc_goal_reached.load(); });
+        
+        _mpc_goal_reached.store(false);
+        ROS_WARN("Switching MPC and Planner back to nominal state");
 
-        _primitives_ready.store(false);
+        estop_client.call(req, resp);
 
-        ROS_WARN("generating motion primitive tree");
-        _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
-        _prim_tree->update_costmap(global_costmap);
+        ros::Duration(2).sleep();
 
-        ROS_WARN("finding best trajectory");
-        ros::Time s = ros::Time::now();
-        _recovery_traj = _prim_tree->find_best_trajectory();
-        ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
+        visualization_msgs::MarkerArray delete_msg;
+        delete_msg.markers.resize(1);
+        delete_msg.markers[0].header.frame_id = _frame_str;
+        delete_msg.markers[0].header.stamp = ros::Time::now();
+        delete_msg.markers[0].ns = "predictions";
+        delete_msg.markers[0].action = visualization_msgs::Marker::DELETEALL;
 
-        _primitives_ready.store(true);
-        _generate_primitives.store(false);
+        candidatePointsVizPub.publish(delete_msg);
+
+        _robo_state.store(NOMINAL);
+        // _primitives_ready.store(false);
+
+        // ROS_WARN("generating motion primitive tree");
+        // _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
+        // _prim_tree->update_costmap(global_costmap);
+
+        // ROS_WARN("finding best trajectory");
+        // ros::Time s = ros::Time::now();
+        // _recovery_traj = _prim_tree->find_best_trajectory();
+        // ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
+
+        // _primitives_ready.store(true);
+        // _generate_primitives.store(false);
         // _primitive_cv.notify_one();
     }
 
 }
-
 
 void Planner::safetyLoop(){
 
@@ -766,54 +793,165 @@ void Planner::safetyLoop(){
         return;
 
     std::unique_lock<std::mutex> robo_state_lock(_robo_state_mutex, std::defer_lock);
-    std::unique_lock<std::mutex> solver_state_lock(_solver_state_mutex, std::defer_lock);
 
     // already in recovery state, no need to do anything
-    if (_robo_state == RECOVERY){
+    if (_robo_state == RECOVERY || sentTraj.points.size() == 0){
         return;
     }
     
-    const costmap_2d::Costmap2D& costmap = *global_costmap->getCostmap();
-    unsigned int mx, my;
-    
-    if (costmap.worldToMap(_odom(0), _odom(1), mx, my)){
-        unsigned char cost = costmap.getCost(mx, my);
-        if (cost != costmap_2d::INSCRIBED_INFLATED_OBSTACLE && cost != costmap_2d::LETHAL_OBSTACLE)
+    costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
+
+    double t_start = (ros::Time::now() - start).toSec();
+    double t_end = (ros::Time::now() - start).toSec() + 20*_traj_dt;
+    int start_ind= std::min((int) (t_start/_traj_dt), (int) sentTraj.points.size()-1);
+    int end_ind= std::min((int) (t_end/_traj_dt), (int) sentTraj.points.size()-1);
+
+    // package trajectory points into solver states and send to inference node
+    robust_fast_navigation::SolverStateArray states;
+
+    // confidences of failure for each point in trajectory
+    std::vector<double> prediction_confidences;
+    prediction_confidences.resize(end_ind-start_ind+1);
+
+    for(int i = start_ind; i < end_ind; ++i){
+        trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[i];
+        Eigen::MatrixXd initialPVAJ(3,4), finalPVAJ(3,4);
+
+        initialPVAJ << p.positions[0], p.velocities[0], p.accelerations[0], p.effort[0],
+                       p.positions[1], p.velocities[1], p.accelerations[1], p.effort[1],
+                       p.positions[2], p.velocities[2], p.accelerations[2], p.effort[2];
+
+        finalPVAJ << goal(0), 0, 0, 0,
+                     goal(1), 0, 0, 0,
+                     0, 0, 0, 0;
+
+        std::vector<Eigen::Vector2d> jpsPath;
+        std::vector<Eigen::MatrixX4d> polys_corridor;
+
+        bool success = solver_boilerplate(_simplify_jps,
+                                            _max_dist_horizon,
+                                            *_map,
+                                            _odom,
+                                            initialPVAJ, 
+                                            finalPVAJ,
+                                            jpsPath);
+                                            
+        if (success){
+            
+            if (polys_corridor.size() > 4 || 
+                !corridor::createCorridorJPS(jpsPath, 
+                                                *_map, 
+                                                polys_corridor,
+                                                initialPVAJ,
+                                                finalPVAJ))
+            {
+                prediction_confidences[i-start_ind] = 1.0;
+            } else
+                prediction_confidences[i-start_ind] = 0.0;
+        } else
+            prediction_confidences[i-start_ind] = 1.0;
+
+        if (prediction_confidences[i-start_ind] < 1.0){
+            robust_fast_navigation::SolverState state;
+            corridor::corridorToMsg(polys_corridor, state.polys);
+            state.initialPVA.positions = {initialPVAJ(0,0), initialPVAJ(1,0), initialPVAJ(2,0)};
+            state.initialPVA.velocities = {initialPVAJ(0,1), initialPVAJ(1,1), initialPVAJ(2,1)};
+            state.initialPVA.accelerations = {initialPVAJ(0,2), initialPVAJ(1,2), initialPVAJ(2,2)};
+
+            state.finalPVA.positions = {finalPVAJ(0,0), finalPVAJ(1,0), finalPVAJ(2,0)};
+            state.finalPVA.velocities = {finalPVAJ(0,1), finalPVAJ(1,1), finalPVAJ(2,1)};
+            state.finalPVA.accelerations = {finalPVAJ(0,2), finalPVAJ(1,2), finalPVAJ(2,2)};
+            states.states.push_back(state);
+        }
+    }
+
+    // send to inference node
+    solverStateArrayPub.publish(states);
+    ROS_INFO("waiting for predictions");
+    std::unique_lock<std::mutex> predictions_lock(_predictions_mutex);
+    _predictions_cv.wait(predictions_lock, [this] {return _predictions_ready.load(); });
+    _predictions_ready.store(false);
+
+    // put prediction results into prediction_confidences vector in slots where conf == 0
+    int count = 0;
+    for (int i = 0; i < prediction_confidences.size(); ++i){
+        if (fabs(prediction_confidences[i]) < 1e-3)
+            prediction_confidences[i] = _predictions[count++];
+
+        std::cout << prediction_confidences[i] << ",";
+    }
+
+    std::cout << "\n";
+
+    // multiply N consecutive confidences together along vector and exit if above threshold
+    int N = 6;
+    for (int i = 0; i < prediction_confidences.size()-(N-1); ++i){
+        // multiply 10 consecutive confidences together along vector and exit if above threshold
+        double conf = 1.0;
+        for (int j = 0; j < N; ++j){
+            conf *= prediction_confidences[i+j];
+        }
+
+        if (conf > _recovery_thresh){
+            ROS_WARN("Confidence of failure is %.4f", conf);
+            robo_state_lock.lock();
+            _robo_state.store(RECOVERY);
+            _generate_primitives.store(true);
+            robo_state_lock.unlock();
+
+            // clear trajectory points to "reset" solver 
+            sentTraj.points.clear();
+
+            trajectory_msgs::JointTrajectory msg;
+            msg.header.stamp = ros::Time::now();
+            msg.header.frame_id = _frame_str;
+
+            trajPub.publish(msg);
+
+            geometry_msgs::Twist cmd_vel;
+            cmd_vel.linear.x = 0;
+            cmd_vel.angular.z = 0;
+            cmdVelPub.publish(cmd_vel);
+
+            state_transition_start_t = ros::Time::now();
+
+            _generate_primitive_cv.notify_one();
             return;
+        }
     }
 
     // by this point we are close to obstacles and recovery behavior should be triggered
-    solver_state_lock.lock();
-    robo_state_lock.lock();
+    // solver_state_lock.lock();
+    // robo_state_lock.lock();
 
-    if (solver_state.status.data != 0 || true){
-        _robo_state.store(RECOVERY);
-        _generate_primitives.store(true);
-        _generate_primitive_cv.notify_one();
+    // if (solver_state.status.data != 0 || true){
+    //     _robo_state.store(RECOVERY);
+    //     _generate_primitives.store(true);
+    //     _generate_primitive_cv.notify_one();
 
-        solver_state_lock.unlock();
-        robo_state_lock.unlock();
+    //     solver_state_lock.unlock();
+    //     robo_state_lock.unlock();
 
-        ROS_WARN("entering recovery mode");
+    //     ROS_WARN("entering recovery mode");
 
-        trajectory_msgs::JointTrajectory msg;
-        msg.header.stamp = ros::Time::now();
-        msg.header.frame_id = _frame_str;
+    //     trajectory_msgs::JointTrajectory msg;
+    //     msg.header.stamp = ros::Time::now();
+    //     msg.header.frame_id = _frame_str;
 
-        trajPub.publish(msg);
+    //     trajPub.publish(msg);
 
-        geometry_msgs::Twist cmd_vel;
-        cmd_vel.linear.x = 0;
-        cmd_vel.angular.z = 0;
-        cmdVelPub.publish(cmd_vel);
+    //     geometry_msgs::Twist cmd_vel;
+    //     cmd_vel.linear.x = 0;
+    //     cmd_vel.angular.z = 0;
+    //     cmdVelPub.publish(cmd_vel);
 
-        state_transition_start_t = ros::Time::now();
+    //     state_transition_start_t = ros::Time::now();
         
-        return;
-    }
+    //     return;
+    // }
 
-    robo_state_lock.unlock();
-    solver_state_lock.unlock();
+    // robo_state_lock.unlock();
+    // solver_state_lock.unlock();
 
 }
 
@@ -901,8 +1039,8 @@ void Planner::controlLoop(const ros::TimerEvent&){
         return;
     }
 
-    if (_robo_state == NOMINAL && (ros::Time::now()-state_transition_start_t).toSec() < 2)
-        return;
+    // if (_robo_state == NOMINAL && (ros::Time::now()-state_transition_start_t).toSec() < 2)
+    //     return;
     
 
     /*************************************
@@ -959,9 +1097,9 @@ void Planner::controlLoop(const ros::TimerEvent&){
 bool Planner::plan(bool is_failsafe){
 
     if (is_failsafe){
-        ROS_INFO("*******************************");
-        ROS_INFO("*** FAILSAFE MODE  ENGAGED ****");
-        ROS_INFO("*******************************");
+        // ROS_INFO("*******************************");
+        // ROS_INFO("*** FAILSAFE MODE  ENGAGED ****");
+        // ROS_INFO("*******************************");
     }
 
     costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
@@ -971,7 +1109,7 @@ bool Planner::plan(bool is_failsafe){
 
     bool not_first = false;
 
-    ROS_INFO("Setting up initial and final conditions");
+    // ROS_INFO("Setting up initial and final conditions");
     Eigen::MatrixXd initialPVAJ(3,4);
     Eigen::MatrixXd finalPVAJ(3,4);
 
@@ -1033,7 +1171,7 @@ bool Planner::plan(bool is_failsafe){
     ************ PERFORM  JPS ************
     **************************************/
 
-    ROS_INFO("Running JPS");
+    // ROS_INFO("Running JPS");
     JPSPlan jps;
     unsigned int sX, sY, eX, eY;
     _map->worldToMap(_odom(0), _odom(1), sX, sY);
@@ -1048,21 +1186,21 @@ bool Planner::plan(bool is_failsafe){
                 _map->getOriginX(), _map->getOriginY(), _map->getResolution());
     jps.JPS();
 
-    ROS_INFO("getting path");
+    // ROS_INFO("getting path");
     std::vector<Eigen::Vector2d> jpsPath = jps.getPath(_simplify_jps);
-    ROS_INFO("got path");
+    // ROS_INFO("got path");
 
     trajectory_msgs::JointTrajectory empty_msg; 
     nav_msgs::Path empty_path;
     populateSolverState(solver_state, empty_path, hPolys, empty_msg, initialPVAJ, finalPVAJ, 0);
 
     if (jpsPath.size() == 0){
-        ROS_ERROR("JPS failed to find path");
+        // ROS_ERROR("JPS failed to find path");
         solver_state.status.data = 1;
         return false;
     }
 
-    ROS_INFO("finished JPS");
+    // ROS_INFO("finished JPS");
     
     /*************************************
     ************* REFINE JPS *************
@@ -1075,7 +1213,7 @@ bool Planner::plan(bool is_failsafe){
         jpsMsgFree.header.stamp = ros::Time::now();
         jpsMsgFree.header.frame_id = _frame_str;
         std::vector<Eigen::Vector2d> jpsFree = getJPSInFree(jpsPath, *_map);
-        ROS_INFO("jpsFree size: %lu", jpsFree.size());
+        // ROS_INFO("jpsFree size: %lu", jpsFree.size());
 
         for(Eigen::Vector2d p : jpsFree){
             geometry_msgs::PoseStamped pMsg;
@@ -1096,7 +1234,7 @@ bool Planner::plan(bool is_failsafe){
                 Eigen::Vector3d::Zero();
 
         if (jpsFree.size() == 0){
-            ROS_ERROR("JPSFree has size 0");
+            // ROS_ERROR("JPSFree has size 0");
             solver_state.status.data = 1;
             return false;
         }
@@ -1117,9 +1255,9 @@ bool Planner::plan(bool is_failsafe){
                 Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
 
-            ROS_INFO_STREAM("JPS path intersected circle at " << goalPoint);
+            // ROS_INFO_STREAM("JPS path intersected circle at " << goalPoint);
         } else{
-            ROS_WARN("JPS path did not intersect circle around robot");
+            // ROS_WARN("JPS path did not intersect circle around robot");
         }
 
     }
@@ -1153,28 +1291,28 @@ bool Planner::plan(bool is_failsafe){
     ********* GENERATE POLYTOPES *********
     **************************************/
     
-    ROS_INFO("creating corridor");
+    // ROS_INFO("creating corridor");
     // don't need to clear hPolys before calling because method will do it
-    if (!corridor::createCorridorJPS(jpsPath, *_map, _obs, hPolys)){
-        ROS_ERROR("CORRIDOR GENERATION FAILED");
+    if (!corridor::createCorridorJPS(jpsPath, *_map, hPolys, initialPVAJ, finalPVAJ)){
+        // ROS_ERROR("CORRIDOR GENERATION FAILED");
         solver_state.status.data = 2;
         return false;
     }
     
-    if (!isInPoly(hPolys[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) )
-        hPolys.insert(hPolys.begin(), corridor::genPoly(*_map, initialPVAJ(0,0), initialPVAJ(1,0)));
+    // if (!isInPoly(hPolys[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) )
+    //     hPolys.insert(hPolys.begin(), corridor::genPoly(*_map, initialPVAJ(0,0), initialPVAJ(1,0)));
     
-    if (!isInPoly(hPolys.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
-        ROS_WARN("end was not in poly, adding extra polygon to correct this");
-        hPolys.insert(hPolys.end(), corridor::genPoly(*_map, finalPVAJ(0,0), finalPVAJ(1,0)));
-    }
+    // if (!isInPoly(hPolys.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
+    //     ROS_WARN("end was not in poly, adding extra polygon to correct this");
+    //     hPolys.insert(hPolys.end(), corridor::genPoly(*_map, finalPVAJ(0,0), finalPVAJ(1,0)));
+    // }
 
     bool is_in_corridor = false;
 
     // if adjacent polytopes don't overlap, don't plan
     for(int p = 0; p < hPolys.size()-1; p++){
         if (!geo_utils::overlap(hPolys[p], hPolys[p+1])){
-            ROS_ERROR("CORRIDOR IS NOT FULLY CONNECTED");
+            // ROS_ERROR("CORRIDOR IS NOT FULLY CONNECTED");
             solver_state.status.data = 2;
             return false;
         }
@@ -1183,10 +1321,10 @@ bool Planner::plan(bool is_failsafe){
             is_in_corridor = isInPoly(hPolys[p], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0)));
     }
 
-    if (!is_in_corridor)
-        ROS_WARN("(%.2f, %.2f) NOT IN CORRIDOR", initialPVAJ(0,0), initialPVAJ(1,0));
+    // if (!is_in_corridor)
+        // ROS_WARN("(%.2f, %.2f) NOT IN CORRIDOR", initialPVAJ(0,0), initialPVAJ(1,0));
 
-    ROS_INFO("%d\t%d",!is_in_corridor, is_failsafe);
+    // ROS_INFO("%d\t%d",!is_in_corridor, is_failsafe);
 
 
     solver_state.polys.poses.clear();
@@ -1194,7 +1332,7 @@ bool Planner::plan(bool is_failsafe){
 
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
-    ROS_INFO("generated corridor of size %lu", hPolys.size());
+    // ROS_INFO("generated corridor of size %lu", hPolys.size());
 
     /*************************************
     ******** GENERATE  TRAJECTORY ********
@@ -1213,7 +1351,7 @@ bool Planner::plan(bool is_failsafe){
     finalState.setAccel(finalPVAJ.col(2));
     finalState.setJerk(finalPVAJ.col(3));
 
-    ROS_INFO("setting up");
+    // ROS_INFO("setting up");
     solver.setX0(initialState);
     solver.setXf(finalState);
     solver.setPolytopes(hPolys);
@@ -1221,7 +1359,7 @@ bool Planner::plan(bool is_failsafe){
     if (_is_occ)
         solver.setOcc(_occ_point);
 
-    ROS_INFO("solving");
+    // ROS_INFO("solving");
     if (!solver.genNewTraj()){
         ROS_ERROR("solver could not find trajectory");
         solver_state.status.data = 3;
@@ -1236,7 +1374,7 @@ bool Planner::plan(bool is_failsafe){
     ******** STITCH  TRAJECTORIES ********
     **************************************/
 
-    ROS_INFO("stitching trajectories");
+    // ROS_INFO("stitching trajectories");
 
     if (sentTraj.points.size() != 0){
 
@@ -1289,7 +1427,7 @@ bool Planner::plan(bool is_failsafe){
     if(!_is_teleop)
         trajPub.publish(sentTraj);
 
-    ROS_INFO("visualizing");
+    // ROS_INFO("visualizing");
     visualizeTraj();
     // pubCurrPoly();
 
@@ -1299,7 +1437,7 @@ bool Planner::plan(bool is_failsafe){
     populateSolverState(solver_state, jpsMsg, hPolys, sentTraj, initialPVAJ, finalPVAJ, 0);
 
     double totalT = (ros::Time::now() - a).toSec();
-    std::cout << "total time is " << totalT << std::endl;
+    // ROS_INFO("total time is %.4f", totalT);
 
     return true;
 

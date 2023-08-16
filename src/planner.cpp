@@ -722,7 +722,7 @@ bool Planner::plan(bool is_failsafe){
 
     ROS_INFO("creating corridor");
     // don't need to clear hPolys before calling because method will do it
-    if (!corridor::createCorridorJPS(jpsPath, *_map, _obs, hPolys)){
+    if (!corridor::createCorridorJPS(jpsPath, *_map, hPolys, initialPVA, finalPVA)){
         ROS_ERROR("CORRIDOR GENERATION FAILED");
         solver_state.status.data = 2;
         return false;

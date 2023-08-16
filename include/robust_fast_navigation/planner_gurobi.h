@@ -10,7 +10,9 @@
 #include <ros/ros.h>
 #include "gcopter/gcopter.hpp"
 
+#include <std_msgs/Bool.h>
 #include <nav_msgs/Path.h>
+#include <std_srvs/Empty.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Point.h>
@@ -62,6 +64,7 @@ private:
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
     void mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg);
     void lasercb(const sensor_msgs::LaserScan::ConstPtr& msg);
+    void mpcGoalReachedcb(const std_msgs::Bool::ConstPtr& msg);
     void goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg);
     void predictionscb(const std_msgs::Float32MultiArray::ConstPtr& msg);
     void clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg);
@@ -86,13 +89,27 @@ private:
 
     vec_Vec2f _obs;
 
-    bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset,
-         _plan_once, _simplify_jps, _is_costmap_started, _map_received, _is_barn, 
-         _plan_in_free, _planned, _is_occ, _primitive_started, _enable_recovery;
+    bool _is_init;
+    bool _started_costmap;
+    bool _is_goal_set;
+    bool _is_teleop;
+    bool _is_goal_reset;
+    bool _plan_once;
+    bool _simplify_jps;
+    bool _is_costmap_started;
+    bool _map_received;
+    bool _is_barn;
+    bool _plan_in_free;
+    bool _planned;
+    bool _is_occ;
+    bool _primitive_started;
+    bool _enable_recovery;
+    bool _use_minvo;
 
     std::atomic<bool> _primitives_ready;
     std::atomic<bool> _predictions_ready;
     std::atomic<bool> _generate_primitives;
+    std::atomic<bool> _mpc_goal_reached;
 
     std::string _frame_str;
 
@@ -105,6 +122,9 @@ private:
     
     ros::Time start, state_transition_start_t, primitive_segment_start;
     ros::Timer controlTimer, goalTimer, publishTimer, primitiveTimer;
+    
+    // Services
+    ros::ServiceClient estop_client;
 
     // Subscribers
     ros::Subscriber mapSub;
@@ -115,6 +135,7 @@ private:
     ros::Subscriber laserSub;
     ros::Subscriber predictionsSub;
     ros::Subscriber clickedPointSub;
+    ros::Subscriber mpcGoalReachedSub;
 
     // Publishers
     ros::Publisher trajVizPub;
@@ -139,6 +160,7 @@ private:
     ros::Publisher solverStateArrayPub;
     ros::Publisher candidatePointsVizPub;
     ros::Publisher cmdVelPub;
+    ros::Publisher recoveryGoalPub;
 
     costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
 
@@ -152,7 +174,7 @@ private:
 
     const double JACKAL_MAX_VEL = 1.0;
     double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, 
-    _prev_jps_cost, _max_dist_horizon, _barn_goal_dist;
+    _prev_jps_cost, _max_dist_horizon, _barn_goal_dist, _recovery_thresh;
 
     int _failsafe_count;
 
@@ -166,10 +188,11 @@ private:
     std::condition_variable _primitive_cv;
     std::condition_variable _predictions_cv;
     std::condition_variable _generate_primitive_cv;
+    std::condition_variable _mpc_goal_cv;
 
     std::mutex _recovery_mutex;
     std::mutex _robo_state_mutex;
-    std::mutex _solver_state_mutex;
+    std::mutex _mpc_goal_mutex;
     std::mutex _predictions_mutex;
 
 };

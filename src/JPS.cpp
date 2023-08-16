@@ -346,7 +346,7 @@ void JPSPlan::JPS(){
         return;
     }
 
-    std::cout << "start " << (int) _map[startY*sizeX + startX] << " and destination " << (int)_map[destY*sizeX + destX] << std::endl;
+    // std::cout << "start " << (int) _map[startY*sizeX + startX] << " and destination " << (int)_map[destY*sizeX + destX] << std::endl;
 
     // cardinal
     add_to_queue(startX, startY, 1, 0, 0);

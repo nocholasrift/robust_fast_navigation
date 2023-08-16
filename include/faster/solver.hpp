@@ -55,31 +55,58 @@ class mycallback : public GRBCallback
 {
 public:
   bool should_terminate_;
-  mycallback();  // constructor
+  mycallback()
+  {
+    should_terminate_ = false;
+  }
+
+  mycallback(double timeout_time)
+  {
+    this->timeout_time = timeout_time;
+    should_terminate_ = false;
+  }
   // void abortar();
+  void set_timeout(double timeout_time){
+    this->timeout_time = timeout_time;
+    should_terminate_ = false;
+  }
 
 protected:
-  void callback();
-};
+  void callback() override
+  {  // This function is called periodically along the optimization process.
+    //  It is called several times more after terminating the program
+    if (where == GRB_CB_MIPNODE)
+    {
+      double elapsed_time = this->getDoubleInfo(GRB_CB_RUNTIME);
+      if (elapsed_time > timeout_time)
+      {
+        printf("Timeout reached\n");
+        should_terminate_ = true;
+        GRBCallback::abort();  // This function only does effect when inside the function callback() of this class
+      }
+    }
+  }
+  
 
+  double timeout_time;
+};
 
 class BasisConverter{
 public:
     BasisConverter(){
         // Digits = 20;
-        // initialize the bezier basis matrix on the interval [0,1]
-        A_bezier = Eigen::MatrixXd(4,4);
-        A_bezier << -1, 3, -3, 1,
-                    3, -6, 3, 0,
-                    -3, 3, 0, 0,
-                    1, 0, 0, 0;
 
-        // initialize the minvo basis matrix on the interval [-1,1]
-        A_minvo = Eigen::MatrixXd(4,4);
-        A_minvo <<  -0.43020000000000,    0.45680000000000,   -0.02700000000000,    0.00040000000000,
+        // initialize the minvo position basis matrix on the interval [-1,1]
+        A_minvo_pos = Eigen::MatrixXd(4,4);
+        A_minvo_pos <<  -0.43020000000000,    0.45680000000000,   -0.02700000000000,    0.00040000000000,
                     0.83490000000000,   -0.45680000000000,   -0.79210000000000,    0.49960000000000,
                     -0.83490000000000,   -0.45680000000000,    0.79210000000000,    0.49960000000000,
                     0.43020000000000,    0.45680000000000,    0.02700000000000,    0.00040000000000;
+
+        A_minvo_vel = Eigen::MatrixXd(3,3);
+        A_minvo_vel <<  0.3750,   -0.4330,  0.1250,
+                        -0.7500,   0,       0.7500,
+                        0.3750,    0.4330,  0.1250;
         
         // roots of lambda polynomial
         roots_lambda = {
@@ -91,7 +118,7 @@ public:
 
     }
 
-    Eigen::MatrixXd get_bernstein_on_interval(const std::vector<double>& int2){
+    Eigen::MatrixXd get_pos_bernstein_on_interval(const std::vector<double>& int2){
 
         std::vector<double> int1 = {0,1};
         
@@ -125,7 +152,39 @@ public:
         return A_conv;
     }
 
-    Eigen::MatrixXd get_minvo_on_interval(const std::vector<double>& int2){
+    Eigen::MatrixXd get_vel_bernstein_on_interval(const std::vector<double>& int2){
+
+        std::vector<double> int1 = {0,1};
+        
+        // Initialize GiNaC symbols
+        symbol t("t");
+
+        // Define transformation from interval 1 to interval 2
+        ex u = (int1[1]-int1[0])/(int2[1]-int2[0])*(t-int2[0])+int1[0];
+
+        // Define Bernstein basis polynomials
+        ex B1 = (u-1)*(u-1);
+        ex B2 = -2*u*(u-1);
+        ex B3 = u*u;
+
+        ex B1_poly = B1.expand();
+        ex B2_poly = B2.expand();
+        ex B3_poly = B3.expand();
+
+
+        std::vector<ex> B_coeffs = {B1_poly, B2_poly, B3_poly};
+        Eigen::MatrixXd A_conv(3,3);
+
+        for(int i = 0; i < B_coeffs.size(); ++i){
+            ex B = B_coeffs[i];
+            for (int deg = 2; deg >= 0; --deg)
+                A_conv(i,2-deg) = ex_to<numeric>(B.coeff(t,deg)).to_double();
+        }
+
+        return A_conv;
+    }
+
+    Eigen::MatrixXd get_pos_minvo_on_interval(const std::vector<double>& int2){
         std::vector<double> int1 = {-1,1};
 
         symbol t("t");
@@ -140,10 +199,10 @@ public:
 
         Eigen::MatrixXd A_conv(4,4);
         std::vector<ex> polynomials;
-        for (int row = 0; row < A_minvo.rows(); ++row){
+        for (int row = 0; row < A_minvo_pos.rows(); ++row){
             polynomials.push_back(0);
             for(int i = 0; i < T.size(); ++i)
-                polynomials[row] += A_minvo(row,i)*T[i];
+                polynomials[row] += A_minvo_pos(row,i)*T[i];
 
             for(int deg = 3; deg >= 0; --deg)
                 A_conv(row,3-deg) = ex_to<numeric>(polynomials[row].expand().coeff(t,deg)).to_double();
@@ -153,10 +212,39 @@ public:
     }
 
 
+    Eigen::MatrixXd get_vel_minvo_on_interval(const std::vector<double>& int2){
+        std::vector<double> int1 = {-1,1};
+
+        symbol t("t");
+        ex u = (int1[1]-int1[0])/(int2[1]-int2[0])*(t-int2[0])+int1[0];
+
+        std::vector<ex> T = {
+            u*u,
+            u,
+            1
+        };
+
+
+        Eigen::MatrixXd A_conv(3,3);
+        std::vector<ex> polynomials;
+        for (int row = 0; row < A_minvo_vel.rows(); ++row){
+            polynomials.push_back(0);
+            for(int i = 0; i < T.size(); ++i)
+                polynomials[row] += A_minvo_vel(row,i)*T[i];
+
+            for(int deg = 2; deg >= 0; --deg)
+                A_conv(row,2-deg) = ex_to<numeric>(polynomials[row].expand().coeff(t,deg)).to_double();
+        }
+
+        return A_conv;
+    }
+
+
 protected:
-    Eigen::MatrixXd A_minvo, A_bezier;
+    Eigen::MatrixXd A_minvo_pos, A_minvo_vel;
     std::vector<Eigen::Vector2d> roots_lambda;
 };
+
 
 class SolverGurobi
 {
@@ -184,6 +272,7 @@ public:
   void setOcclusionConstraint();
   void setConstraintsXf();
   void setConstraintsX0();
+  void setUseMinvo(bool use_minvo);
   void setOcc(const Eigen::MatrixXd& point);
   void setDynamicConstraints();
   void setForceFinalConstraint(bool forceFinalConstraint);
@@ -234,8 +323,9 @@ public:
   double dt_;  // time step found by the solver
   int trials_ = 0;
   int temporal_ = 0;
-  double runtime_ms_ = 0;
+  double runtime_s_ = 0;
   double factor_that_worked_ = 0;
+  double max_solver_time = 0;
   int N_ = 10;
   mycallback cb_;
 
@@ -289,6 +379,7 @@ protected:
   int mode_;
   bool forceFinalConstraint_ = true;
   bool is_occ_ = false;
+  bool use_minvo_ = false;
   double factor_initial_ = 2;
   double factor_final_ = 2;
   double factor_increment_ = 2;

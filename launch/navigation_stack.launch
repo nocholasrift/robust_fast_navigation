@@ -30,6 +30,8 @@
     <!-- <node name="pd_controller" pkg="robust_fast_navigation" type="pd_controller.py" output="screen" /> -->
 
     <!-- MPC Tracking -->
-    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch" />
+    <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch" >
+        <remap from="/move_base_simple/goal" to="/recoveryGoal" />
+    </include>
 
 </launch>
