@@ -1,9 +1,11 @@
 #ifndef JPS_H
 #define JPS_H
 
-#include <map>
 #include <queue>
 #include <vector>
+#include <utility>
+#include <unordered_map>
+
 #include <Eigen/Core>
 
 struct JPSNode{
@@ -44,14 +46,15 @@ public:
 
 private:
 
-    double chebyshev_dist(int x, int y);
+    double chebyshev_dist(int sx, int sy, int ex, int ey);
     double manhattan_distance(int x, int y);
     double octile_dist(int x, int y);
     double euclidean_dist(int x, int y);
 
-    void add_to_queue(int x, int y, int dirx, int diry, double cost);
     bool explore_straight(const JPSNode_t& start);
     bool explore_diagonal(const JPSNode_t& start);
+    void add_to_queue(int x, int y, int dirx, int diry, double cost);
+    bool add_to_parents(const JPSNode_t& node, const JPSNode_t& parent, double cost);
 
     bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
         int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term);
@@ -59,8 +62,8 @@ private:
                     double max_range=1e6, bool map_coords=true);
 
 
-    std::map<int, bool> closedSet;
-    std::map<int, int> parents;
+    std::unordered_map<int, bool> closedSet;
+    std::unordered_map<int, std::pair<int, int>> parents;
 
     unsigned char* _map;
 

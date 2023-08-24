@@ -57,8 +57,10 @@ void JPSPlan::set_destination(int x, int y){
   Returns:
     - Cost to destination coordinate
 ***********************************************************************/
-double JPSPlan::chebyshev_dist(int x, int y){
-    return std::max(abs(destX-x), abs(destY-y));
+double JPSPlan::chebyshev_dist(int sx, int sy, int ex, int ey){
+    // std::cout << "chebyshev dist from " << sx << ", " << sy << " to " << ex << ", " << ey << "is " << std::max(abs(ex-sx), abs(ey-sy)) << std::endl;
+    // std::cout << abs(ex-sx) << "\t" << abs(ey-sy) << "\t" << std::max(abs(ex-sx), abs(sy-ey)) << std::endl;
+    return std::max(abs(ex-sx), abs(ey-sy));
 }
 
 // im going to assume we never go over max_int number of cells in either direction...
@@ -123,6 +125,25 @@ void JPSPlan::add_to_queue(int x, int y, int dirx, int diry, double cost){
     count += 1;
 }
 
+bool JPSPlan::add_to_parents(const JPSNode_t& node, const JPSNode_t& parent, double cost){
+
+    // check if node is not in parents
+    if (parents.find(node.y*sizeX + node.x) == parents.end()){
+        parents[node.y*sizeX + node.x] = std::make_pair(parent.y*sizeX + parent.x, cost);
+        return true;
+    }
+
+    // node is in parents, but check if cost is lower
+    if (cost < parents[node.y*sizeX + node.x].second){
+        parents[node.y*sizeX + node.x] = std::make_pair(parent.y*sizeX + parent.x, cost);
+    }
+    else
+        return false;
+
+
+    return true;
+}
+
 /**********************************************************************
   This function performs jumps in the grid in one of the 4 cardinal
   directions starting at the given node. When this function is called,
@@ -141,7 +162,18 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
     int dirx = start.dirx;
     int diry = start.diry;
 
-    double cost = start.cost;
+    // start cost is simply parent cost + # cells between parent and start node
+    // # cells between parent and start node can be found with chebyshev distance
+    int parentInd = parents[start.y*sizeX + start.x].first;
+    int py = parentInd / sizeX;
+    int px = parentInd - py*sizeX;
+
+    double cost = parents[start.y*sizeX + start.x].second + chebyshev_dist(px, py, start.x, start.y);
+    // std::cout << "cost to " << start.x << ", " << start.y << " is " << cost << std::endl;
+    // std::cout << "parent cost is " << parents[start.y*sizeX + start.x].second << std::endl;
+
+    // if (cost > 0)
+    //     exit(0);
     JPSNode_t curr = start;
 
     closedSet[start.y*sizeX + start.x] = true;
@@ -158,8 +190,6 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
         if ( (n.x > sizeX-1 && dirx == 1) || (n.y > sizeY-1 && diry == 1)
             || (n.x < 0 && dirx == -1) || (n.y < 0 && diry == -1)){
 
-            // if (start.x == 21 && start.y == 26)
-            //     //std::cout << "poop" << std::endl;
             return false;
         }
 
@@ -169,7 +199,8 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
 
         if ( n.x == destX && n.y == destY){
             //std::cout << "GOAL FOUND" << std::endl;
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            // parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            add_to_parents(n, start, cost);
             add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             return true;
         }
@@ -207,8 +238,10 @@ bool JPSPlan::explore_straight(const JPSNode_t& start){
 
         // if node has any forced neighbords, it is a jump point, so add to queue as well
         if (added){
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
-            //std::cout << "parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
+
+            // parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            add_to_parents(n, start, cost);
+            // std::cout << "straight found jump: parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
             add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             return true;
         }
@@ -242,11 +275,22 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
     int dirx = start.dirx;
     int diry = start.diry;
 
-    double cost = start.cost;
+    // start cost is simply parent cost + # cells between parent and start node
+    // # cells between parent and start node can be found with chebyshev distance
+    int parentInd = parents[start.y*sizeX + start.x].first;
+    int py = parentInd / sizeX;
+    int px = parentInd - py*sizeX;
+    
+    double cost = parents[start.y*sizeX + start.x].second + chebyshev_dist(px, py, start.x, start.y);
+    // std::cout << "(diag) cost to " << start.x << ", " << start.y << " is " << cost << std::endl;
+    // std::cout << "(diag) parent cost is " << parents[start.y*sizeX + start.x].second << std::endl;
+
+    // if (cost > 0)
+    //     exit(0);
     JPSNode_t curr = start;
     closedSet[start.y*sizeX + start.x] = true;
 
-    //std::cout << "explore diagonal (" << start.x << ", " << start.y << ", " << dirx << ", " << diry << ")" << std::endl;
+    // std::cout << "explore diagonal (" << start.x << ", " << start.y << ", " << dirx << ", " << diry << ")" << std::endl;
     
     while(true){
         JPSNode_t n = curr;
@@ -267,7 +311,9 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
 
         if ( n.x == destX && n.y == destY){
             //std::cout << "GOAL FOUND" << std::endl;
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            add_to_parents(n, start, cost);
+            // parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            // std::cout << "diag found jump: parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
             add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             return true;
         }
@@ -275,18 +321,23 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
         bool added = false;
         if ( _map[n.y*sizeX + curr.x] == occupied_val && _map[(n.y+diry)*sizeX + curr.x] != occupied_val){
             //std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            add_to_parents(n, start, cost);
+            // parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            // std::cout << "diag found jump: parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
             add_to_queue(n.x, n.y, -n.dirx, n.diry, cost);
             added = true;
         }
 
         if ( _map[curr.y*sizeX + n.x] == occupied_val && _map[curr.y*sizeX + n.x+dirx] != occupied_val){
             //std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            add_to_parents(n, start, cost);
+            // parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
+            // std::cout << "diag found jump: parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
             add_to_queue(n.x, n.y, n.dirx, -n.diry, cost);
             added = true;
         }
 
+        add_to_parents(n, start, cost);
         JPSNode_t horN;
         horN.x = n.x;
         horN.y = n.y;
@@ -303,21 +354,11 @@ bool JPSPlan::explore_diagonal(const JPSNode_t& start){
         verN.cost = cost;
         bool found_ver = explore_straight(verN);
 
-        if (found_ver || found_hor){
-            parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
-            // add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
-            // return true;
-        }
-
-        // if (added){
-            // add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
-            // return true;
-        // }
-
-        // if (added || found_ver || found_hor){
-        //     parents[n.y*sizeX + n.x] = start.y*sizeX + start.x;
-        //     add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
-        // }
+        if (!found_ver && !found_hor){
+            // avoid extra nodes existing in path
+            parents.erase(n.y*sizeX + n.x);
+            // std::cout << "diag found jump in straights: parent of (" <<n.x<< "," <<n.y<< ") is (" <<start.x<< "," <<start.y<< ")" << std::endl;
+        } 
 
         // moving diagonally
         curr.x = n.x;
@@ -360,14 +401,14 @@ void JPSPlan::JPS(){
     add_to_queue(startX, startY, -1, 1, 0);
     add_to_queue(startX, startY, -1, -1, 0);
 
-    parents[startY*sizeY + startX] = startY*sizeY + startX;
+    parents[startY*sizeY + startX] = std::make_pair(startY*sizeY + startX, 0);
 
     while (q.size() > 0){
         JPSNode_t node = q.top();
         q.pop();
 
-        //std::cout << "LOOKING AT NODE (" << node.x << ", " << node.y <<  
-        //     ", " << node.dirx << ", " << node.diry << ", " << node.cost+node.manhattan << ")" << std::endl;
+        // std::cout << "LOOKING AT NODE (" << node.x << ", " << node.y <<  
+            // ", " << node.dirx << ", " << node.diry << ", " << node.cost+node.manhattan << ")" << std::endl;
 
         if (node.x == destX && node.y == destY){
             goalInd = destY * sizeX + destX;
@@ -409,18 +450,24 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
     x = goalInd - y*sizeX;
     ret.push_back(Eigen::Vector2d(x,y));
 
-    int i = parents[goalInd];
+    int i = parents[goalInd].first;
     int j = 0;
 
     while(i != startY*sizeX + startX && j++ < 1000){
-        //std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ") -->";
+        // std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ") -->";
         y = i/sizeX;
         x = i - y*sizeX;
         ret.push_back(Eigen::Vector2d(x,y));
-        i = parents[i];
+        i = parents[i].first;
     }
 
-    //std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ")\n";
+    // std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ")\n";
+    unsigned int startInd = startY * sizeX + startX;
+    int ax, ay;
+    ay = startInd / sizeX;
+    ax = startInd - ay*sizeX;
+    // std::cout << "parents[startInd] " << ax << ", " << ay << std::endl;
+
     y = i/sizeX;
     x = i - y*sizeX;
     ret.push_back(Eigen::Vector2d(x,y));
@@ -434,26 +481,21 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify){
         std::reverse(std::begin(ret), std::end(ret));
 
         // Logic from JPS3D
-        for(int i = 1; i < ret.size()-1; ){
+        for(int k = 1; k < ret.size()-1; ){
             
-            Eigen::Vector2d p = (ret[i+1]-ret[i])-(ret[i]-ret[i-1]);
+            Eigen::Vector2d p = (ret[k+1]-ret[k])-(ret[k]-ret[k-1]);
             if (fabs(p[0]) + fabs(p[1]) <= 1e-2)
                 ret.erase(ret.begin()+i);
             else
-                i++;
-            // if ((ret[i+1][0] == ret[i][0] && ret[i-1][0]== ret[i][0]) ||
-            //     (ret[i+1][1] == ret[i][1] && ret[i-1][1] == ret[i][1]) )
-            //     ret.erase(ret.begin()+i);
-            // else
-            //     i++;
+                k++;
         
         }
     } 
         
-    for(int i = 0; i < ret.size(); i++){
+    for(int k = 0; k < ret.size(); k++){
         double x,y;
-        mapToWorld(ret[i][0], ret[i][1], x, y);
-        ret[i] = Eigen::Vector2d(x,y);
+        mapToWorld(ret[k][0], ret[k][1], x, y);
+        ret[k] = Eigen::Vector2d(x,y);
     }
   
 
