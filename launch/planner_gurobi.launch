@@ -2,8 +2,8 @@
 
     <arg name="barn" default="false" />
     <arg name="barn_dist" default="10.0" />
-    <arg name="max_vel" default="1.0" />
-    <arg name="enable_recover" default="true" />
+    <arg name="max_vel" default=".8" />
+    <arg name="enable_recover" default="false" />
     <arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />
 
     <rosparam file="$(arg param_file)" command="load" ns="robust_planner/" />

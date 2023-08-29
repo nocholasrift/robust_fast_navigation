@@ -185,6 +185,7 @@ private:
     double _barn_goal_dist;
     double _recovery_thresh;
     double _curr_horizon;
+    double _max_dev;
 
     int _failsafe_count;
     int _recovery_samples;

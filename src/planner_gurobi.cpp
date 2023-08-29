@@ -36,6 +36,7 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param("robust_planner/is_barn", _is_barn, false);
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
+    nh.param("robust_planner/max_deviation", _max_dev, 1.);
     nh.param("robust_planner/planner_frequency", _dt, .1);
     nh.param("robust_planner/plan_once", _plan_once, false);
     nh.param("robust_planner/use_minvo", _use_minvo, false);
@@ -564,7 +565,7 @@ void Planner::buildPrimitiveTree(){
         std_srvs::Empty::Response resp;
         estop_client.call(req, resp);
 
-        ros::Duration(1).sleep();
+        ros::Duration(3).sleep();
 
         // hold recovery lock when building tree, this will prevent the
         // motion primitives execution loop from running until tree is generated.
@@ -753,6 +754,27 @@ void Planner::buildPrimitiveTree(){
                 // go through and score each state based on cost-to-go for the vehicle
                 Eigen::Vector2d robo_pose(_odom(0), _odom(1));
                 double min_cost = 1e6;
+
+                double d_max = -1;
+                double theta_max = -1;
+                for(int i = 0; i < states.states.size(); ++i){
+                    double x = states.states[i].initialPVA.positions[0];
+                    double y = states.states[i].initialPVA.positions[1];
+                    Eigen::Vector2d point(x,y);
+                    if ((point - robo_pose).norm() > d_max)
+                        d_max = (point - robo_pose).norm();
+
+                    double angle = std::atan2(point(1) - robo_pose(1), point(0) - robo_pose(0));
+                    double angle_diff = std::abs(angle - _odom(2));
+                    if (angle_diff > M_PI)
+                        angle_diff = 2*M_PI - angle_diff;
+
+                    if (angle_diff > theta_max)
+                        theta_max = angle_diff;
+
+                }
+                ROS_INFO("d_max is %.2f", d_max);
+                
                 for(int i = 0; i < states.states.size(); ++i){
                     if (_predictions[i] > 0.5)
                         continue;
@@ -772,7 +794,7 @@ void Planner::buildPrimitiveTree(){
                         angle_diff = 2*M_PI - angle_diff;
 
                     // compute cost
-                    double score = .5*eucl_d + angle_diff;
+                    double score = .8*eucl_d/d_max + angle_diff/theta_max;
                     ROS_INFO("score of (%.2f, %.2f): %.2f\tprediction: %f", x, y, score, _predictions[i]);
                     if (cost < min_cost){
                         min_cost = cost;
@@ -1221,12 +1243,18 @@ bool Planner::plan(bool is_failsafe){
         poseMsg.point.z = p.positions[2];
         initPointPub.publish(poseMsg);
 
-        initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], 
-                                            p.positions[1], 
-                                            p.positions[2]);
+        double dist = (Eigen::Vector2d(_odom(0), _odom(1))-Eigen::Vector2d(p.positions[0], p.positions[1])).norm();
+
+        if (dist > _max_dev){
+            initialPVAJ.col(0) = Eigen::Vector3d(_odom(0),_odom(1),0);
+        } else
+            initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], 
+                                                p.positions[1], 
+                                                p.positions[2]);
                                             
-        // start from robot not moving if failsafe
-        if (is_failsafe){
+
+        // start from robot not moving if failsafe or too far from reference
+        if (is_failsafe || dist > _max_dev){
             initialPVAJ.col(1) = Eigen::Vector3d(0,0,0);
             initialPVAJ.col(2) = Eigen::Vector3d(0,0,0);
             initialPVAJ.col(3) = Eigen::Vector3d(0,0,0);
