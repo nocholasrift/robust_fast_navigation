@@ -155,7 +155,7 @@ private:
     ros::Publisher currPolyPub;
     ros::Publisher initPointPub;
     ros::Publisher corridorPub;
-    ros::Publisher helperPolyPub;
+    ros::Publisher recoveryPolyPub;
     ros::Publisher solverStatePub;
     ros::Publisher solverStateArrayPub;
     ros::Publisher candidatePointsVizPub;
@@ -172,11 +172,23 @@ private:
     Eigen::MatrixXd _occ_point;
     // Trajectory<5> traj;
 
-    const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, 
-    _prev_jps_cost, _max_dist_horizon, _barn_goal_dist, _recovery_thresh;
+    double _max_vel;
+    double _max_acc;
+    double _max_jerk;
+    double _max_w;
+    double _dt;
+    double _const_factor;
+    double _lookahead;
+    double _traj_dt;
+    double _prev_jps_cost;
+    double _max_dist_horizon;
+    double _barn_goal_dist;
+    double _recovery_thresh;
+    double _curr_horizon;
 
     int _failsafe_count;
+    int _recovery_samples;
+    int _recovery_horizon;
 
     nav_msgs::OccupancyGrid map;
     

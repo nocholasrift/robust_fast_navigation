@@ -118,6 +118,7 @@ def main():
 
         input_data = extract_input_from_states(states)
 
+        print(input_data, len(states))
         # test prediciton runtime
         start = time.time()
         predictions = gp_model.predict(input_data)

@@ -3,59 +3,25 @@
     <arg name="barn" default="false" />
     <arg name="barn_dist" default="10.0" />
     <arg name="max_vel" default="1.0" />
+    <arg name="enable_recover" default="true" />
+    <arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />
 
+    <rosparam file="$(arg param_file)" command="load" ns="robust_planner/" />
     <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner_gurobi" > -->
     <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner_gurobi" output="screen">
     <!-- <node name="robust_planner" pkg="robust_fast_navigation" type="robust_planner_gurobi" 
           launch-prefix="lldb" output="screen">  -->
-        
-        <!-- Max velocity for planner to execute. Doesn't currently work -->
-        <param name="max_velocity" value="$(arg max_vel)" />
-        <!-- How frequently the planner loop runs in seconds -->
-        <!-- .3 is a good number for this, just setting to .2 for experiments for testing -->
-        <param name="planner_frequency" value=".3" />
-        <!-- How far ahead in time the planner will look to grab the initial pos -->
-        <param name="lookahead" value=".35" />
-        <!-- Divide speeds in trajectory by this number, this is how speed is controlled -->
-        <param name="const_factor" value="6" />
-        <!-- Plan without sending anything to external tracker -->
-        <param name="teleop" value="false" />
-        <!-- Plan once and then exit, useful for debugging -->
-        <param name="plan_once" value="false" />
-        <!-- Whether or not to simplify the JPS before constructing corridor.
-             It's best to keep this set as true. -->
-        <param name="simplify_jps" value="true" />
-        <!-- Frame for planning to occur -->
-        <param name="frame" value="map" />
-        <!-- Time discretization of trajectory -->
-        <param name="traj_dt" value=".05" />
-        <!-- How many planner failures before entering failsafe mode -->
-        <param name="failsafe_count" value="4" />
-        <!-- Plan only within free space, doesn't work very well... -->
-        <param name="plan_in_free" value="false" />
-        <!-- How far out in distance the planner will generate a trajectory -->
-        <param name="max_dist_horizon" value="5" />
-
-        <param name="enable_recovery" value="false" />
-        <param name="recovery_thresh" value=".5" />
-
-        <param name="use_minvo" value="false" />
-
+        <param name="v_max" value="$(arg max_vel)" />
+        <param name="enable_recovery" value="$(arg enable_recover)" />
         <param name="is_barn" value="$(arg barn)" />
         <param name="barn_goal_dist" value="$(arg barn_dist)" />
 
         <remap from="/planner_goal" to="/move_base_simple/goal" />
-        <!-- <remap from="/planner_goal" to="/gap_goal" /> -->
-        <!-- <remap from="/planner_goal" to="/final_goal" /> -->
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 
-    <!-- <node name="BRSManager" pkg="robust_fast_navigation" type="brs_manager" output="screen" /> -->
-<!-- 
-    <node name="trail_viz" pkg="robust_fast_navigation" type="trail_viz.py" output="screen" >
-        <param name="max_velocity" value="$(arg max_vel)" />
-    </node> -->
-
-    <node name="run_inference_gp" pkg="robust_fast_navigation" type="run_inference_gp.py" output="screen" />
+    <group if="$(arg enable_recover)">
+        <node name="run_inference_gp" pkg="robust_fast_navigation" type="run_inference_gp.py" output="screen" />
+    </group>
 
 </launch>

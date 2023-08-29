@@ -327,6 +327,43 @@ std::vector<Eigen::Vector2d> getJPSInFree(const std::vector<Eigen::Vector2d>& pa
     return ret;
 }
 
+bool truncateJPS(const std::vector<Eigen::Vector2d>& path, 
+                 std::vector<Eigen::Vector2d>& resultPath,
+                 double d)
+{
+    if (path.size() < 2) {
+        // Not enough points to create a path
+        return false;
+    }
+    
+    double remainingDistance = d;
+    Eigen::Vector2d resultPoint;
+    resultPath.clear();
+    resultPath.push_back(path[0]); // Start point of the new path
+    
+    for (size_t i = 1; i < path.size(); ++i) {
+        double segmentLength = (path[i] - path[i - 1]).norm();
+        
+        if (remainingDistance <= 0) {
+            // Requested distance is longer than the entire path
+            return false;
+        }
+        
+        if (remainingDistance <= segmentLength) {
+            // The target point lies on this segment
+            double t = remainingDistance / segmentLength;
+            resultPoint = (1 - t) * path[i - 1] + t * path[i];
+            resultPath.push_back(resultPoint);
+            return true;
+        }
+        
+        resultPath.push_back(path[i]); // Add entire segment to the new path
+        remainingDistance -= segmentLength;
+    }
+    
+    return false; // Requested distance is longer than the entire path
+}
+
 // https://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
 bool lineSphereIntersection( 
     const Eigen::Vector2d& A, 
@@ -490,14 +527,14 @@ bool solver_boilerplate(bool simplify_jps,
     Eigen::Vector2d goalPoint;
 
     // ROS_WARN("checking sphere intersection");
-    if (getJPSIntersectionWithSphere(
+    if (truncateJPS(
         jpsPath, 
         newJPSPath,
-        Eigen::Vector2d(_odom[0], _odom[1]),
-        max_dist_horizon, goalPoint)){
+        max_dist_horizon)){
 
         jpsPath = newJPSPath;
 
+        goalPoint = jpsPath.back();
         if (finalPVAJ.cols() == 4){
             finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
                 Eigen::Vector3d::Zero(), 
@@ -513,5 +550,7 @@ bool solver_boilerplate(bool simplify_jps,
 
     return true;
 }
+
+
 
 #endif

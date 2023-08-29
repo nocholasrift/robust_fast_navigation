@@ -28,15 +28,17 @@
 Planner::Planner(ros::NodeHandle& nh){
 
     // ROS Params
+    nh.param("robust_planner/w_max", _max_w, 3.);
+    nh.param("robust_planner/v_max", _max_vel, 1.0);
+    nh.param("robust_planner/a_max", _max_acc, 1.2);
+    nh.param("robust_planner/j_max", _max_jerk, 4.0);
     nh.param("robust_planner/traj_dt", _traj_dt, .1);
     nh.param("robust_planner/is_barn", _is_barn, false);
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/planner_frequency", _dt, .1);
-    nh.param("robust_planner/max_velocity", _max_vel, 1.);
     nh.param("robust_planner/plan_once", _plan_once, false);
     nh.param("robust_planner/use_minvo", _use_minvo, false);
-    nh.param("robust_planner/const_factor", _const_factor, 6.);
     nh.param("robust_planner/plan_in_free", _plan_in_free, false);
     nh.param("robust_planner/simplify_jps", _simplify_jps, false);
     nh.param("robust_planner/failsafe_count", _failsafe_count, 2);
@@ -45,6 +47,8 @@ Planner::Planner(ros::NodeHandle& nh){
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
     nh.param("robust_planner/enable_recovery", _enable_recovery, true);
+    nh.param("robust_planner/recovery_samples", _recovery_samples, 10);
+    nh.param("robust_planner/recovery_horizon", _recovery_horizon, 20);
 
     // Publishers 
     trajVizPub = 
@@ -89,8 +93,8 @@ Planner::Planner(ros::NodeHandle& nh){
     corridorPub = 
         nh.advertise<geometry_msgs::PoseArray>("/polyCorridor", 0);
 
-    helperPolyPub = 
-        nh.advertise<geometry_msgs::PoseArray>("/helperPolys", 0);
+    recoveryPolyPub = 
+        nh.advertise<geometry_msgs::PoseArray>("/recoveryPoly", 0);
 
     intGoalPub = 
         nh.advertise<geometry_msgs::PoseArray>("/intermediate_goal", 0);
@@ -150,13 +154,14 @@ Planner::Planner(ros::NodeHandle& nh){
     // _robo_state = RECOVERY;
 
     _prev_jps_cost = -1;
+    _curr_horizon = _max_dist_horizon;
 
     _prim_tree = nullptr;
     global_costmap = nullptr;
 
     ROS_INFO("Initialized planner!");
 
-    double limits[3] = {_max_vel,1.2,4};
+    double limits[3] = {_max_vel,_max_acc,_max_jerk};
 
     solver.setN(6);
     solver.createVars();
@@ -165,7 +170,7 @@ Planner::Planner(ros::NodeHandle& nh){
     solver.setForceFinalConstraint(true);
     solver.setFactorInitialAndFinalAndIncrement(1,10,1.0);
     solver.setThreads(0);
-    solver.setWMax(4.0);
+    solver.setWMax(_max_w);
     solver.setVerbose(0);
     solver.setUseMinvo(_use_minvo);
 }
@@ -332,7 +337,7 @@ void Planner::publishOccupied(const ros::TimerEvent&){
         paddedMsg.points.push_back(pMs);
     }
 
-    paddedLaserPub.publish(paddedMsg);
+    // paddedLaserPub.publish(paddedMsg);
 }
 
 /**********************************************************************
@@ -538,7 +543,6 @@ void Planner::buildPrimitiveTree(){
     std::random_device rd;
     std::vector<std::string> wrong_right = {"incorrectly", "correctly"};
     std::vector<std::string> pass_fail = {"succeed", "fail"};
-
   
     while (ros::ok){
 
@@ -560,6 +564,8 @@ void Planner::buildPrimitiveTree(){
         std_srvs::Empty::Response resp;
         estop_client.call(req, resp);
 
+        ros::Duration(1).sleep();
+
         // hold recovery lock when building tree, this will prevent the
         // motion primitives execution loop from running until tree is generated.
         // std::unique_lock<std::mutex> recovery_lock(_recovery_mutex);
@@ -575,7 +581,10 @@ void Planner::buildPrimitiveTree(){
         Eigen::VectorXd b1 = -1*poly.rightCols(1);
         
         // publish polygon
+        geometry_msgs::PoseArray recovery_poly_msg;
         corridor::visualizePolytope({poly}, meshPub, edgePub);
+        corridor::corridorToMsg({poly}, recovery_poly_msg);
+        recoveryPolyPub.publish(recovery_poly_msg);
 
         int max_iterations = 100;
         bool found_recovery_point = false;
@@ -592,7 +601,9 @@ void Planner::buildPrimitiveTree(){
             robust_fast_navigation::SolverStateArray states;
 
             // sample 10 points from the HPolyhedron
-            while (states.states.size() < 10){
+            int attempts = 0;
+            while (states.states.size() < _recovery_samples){
+                attempts++;
                 // ROS_WARN_STREAM("Sample: " << poly_drake.UniformSample(&generator).transpose());
                 Eigen::VectorXd sample = poly_drake.UniformSample(&generator);
             
@@ -614,12 +625,19 @@ void Planner::buildPrimitiveTree(){
                 std::vector<Eigen::MatrixX4d> polys_corridor;
 
                 bool success = solver_boilerplate(_simplify_jps,
-                                                  _max_dist_horizon,
+                                                  _curr_horizon,
                                                   *_map,
                                                   _odom,
                                                   initialPVAJ, 
                                                   finalPVAJ,
                                                   jpsPath);
+                // bool success = solver_boilerplate(_simplify_jps,
+                //                                   _max_dist_horizon,
+                //                                   *_map,
+                //                                   _odom,
+                //                                   initialPVAJ, 
+                //                                   finalPVAJ,
+                //                                   jpsPath);
                                                   
                 if (!success)
                     continue;
@@ -648,6 +666,7 @@ void Planner::buildPrimitiveTree(){
                 if (!is_overlap)
                     continue;
 
+                ROS_WARN("Found valid recovery point! %lu/%d", states.states.size(), attempts);
                 // populate SolverState
                 robust_fast_navigation::SolverState state;
                 corridor::corridorToMsg(polys_corridor, state.polys);
@@ -669,16 +688,17 @@ void Planner::buildPrimitiveTree(){
             ROS_WARN("waiting for solver predictions");
             std::unique_lock<std::mutex> predictions_lock(_predictions_mutex);
             _predictions_cv.wait(predictions_lock, [this] {return _predictions_ready.load(); });
+            
+            _predictions_ready.store(false);
 
-            ROS_INFO("generating prediciton visualization msg");
+            ROS_INFO("generating predicton visualization msg");
             // check if any predictions are valid and package them in marker array
             // marker array of spheres, size of sphere will represent probability
             visualization_msgs::MarkerArray predictions_msg;
             predictions_msg.markers.resize(_predictions.size());
 
             bool is_valid = false;
-            Eigen::Vector2d g;
-            for(int i = 0; i < _predictions.size(); i++){
+            for(int i = 0; i < _predictions.size(); ++i){
                 double x = states.states[i].initialPVA.positions[0];
                 double y = states.states[i].initialPVA.positions[1];
 
@@ -697,7 +717,6 @@ void Planner::buildPrimitiveTree(){
                 int prediction = 1;
                 double confidence = _predictions[i];
                 if (_predictions[i] < 0.5){
-                    g = Eigen::Vector2d(x,y);
                     confidence = 1 - _predictions[i];
                     prediction = 0;
                     marker.color.g = 1.0;
@@ -705,12 +724,11 @@ void Planner::buildPrimitiveTree(){
                 } else
                     marker.color.r = 1.0;
 
-                marker.scale.x = 0.5*confidence;
-                marker.scale.y = 0.5*confidence;
-                marker.scale.z = 0.5*confidence;
+                std::cout << _predictions[i] << ", ";
+                marker.scale.x = 0.2*confidence;
+                marker.scale.y = 0.2*confidence;
+                marker.scale.z = 0.2*confidence;
                 marker.color.a = 1.0;
-
-
                 // ROS_WARN("%s found %s prediction at (%.2f, %.2f)",
                 //         wrong_right[solveFromSolverState(states.states[i])==1-prediction].c_str(),
                 //         pass_fail[prediction].c_str(),
@@ -719,24 +737,84 @@ void Planner::buildPrimitiveTree(){
 
                 predictions_msg.markers[i] = marker;
             }
+            std::cout << "\n";
+
 
             // publish visualization_msg
             ROS_INFO("Publishing predictions");
             candidatePointsVizPub.publish(predictions_msg);
 
+            ros::Duration(1).sleep();
+
             ROS_INFO("done publishing predictions %d", is_valid);
             // set predictions_ready to false and leave loop if valid predictions found
             if (is_valid){
-                found_recovery_point = true;
-                _predictions_ready.store(false);
 
-                recovery_point = Eigen::Vector2d(g(0), g(1));
+                // go through and score each state based on cost-to-go for the vehicle
+                Eigen::Vector2d robo_pose(_odom(0), _odom(1));
+                double min_cost = 1e6;
+                for(int i = 0; i < states.states.size(); ++i){
+                    if (_predictions[i] > 0.5)
+                        continue;
+                        
+                    double x = states.states[i].initialPVA.positions[0];
+                    double y = states.states[i].initialPVA.positions[1];
+                    Eigen::Vector2d point(x,y);
+
+                    double cost = 0.;
+                    // compute euclidean distance
+                    double eucl_d = (point - robo_pose).norm();
+                    // compute heading cost, treat backwards point same as front points
+                    Eigen::Vector2d dir_vec = point - robo_pose;
+                    double angle = std::atan2(dir_vec(1), dir_vec(0));
+                    double angle_diff = std::abs(angle - _odom(2));
+                    if (angle_diff > M_PI)
+                        angle_diff = 2*M_PI - angle_diff;
+
+                    // compute cost
+                    double score = .5*eucl_d + angle_diff;
+                    ROS_INFO("score of (%.2f, %.2f): %.2f\tprediction: %f", x, y, score, _predictions[i]);
+                    if (cost < min_cost){
+                        min_cost = cost;
+                        recovery_point = Eigen::Vector2d(x,y);
+                    }
+                }
+                
+                found_recovery_point = true;
+
+                predictions_msg.markers.clear();
+                visualization_msgs::Marker delete_msg;
+                delete_msg.header.frame_id = _frame_str;
+                delete_msg.header.stamp = ros::Time::now();
+                delete_msg.ns = "predictions";
+                delete_msg.action = visualization_msgs::Marker::DELETEALL;
+                predictions_msg.markers.push_back(delete_msg);
+
+                visualization_msgs::Marker marker;
+                marker.header.frame_id = _frame_str;
+                marker.header.stamp = ros::Time::now();
+                marker.ns = "predictions";
+                marker.id = 0;
+                marker.type = visualization_msgs::Marker::SPHERE;
+                marker.action = visualization_msgs::Marker::ADD;
+                marker.pose.position.x = recovery_point(0);
+                marker.pose.position.y = recovery_point(1);
+                marker.pose.position.z = 0;
+                marker.pose.orientation.w = 1;
+                marker.scale.x = 0.2;
+                marker.scale.y = 0.2;
+                marker.scale.z = 0.2;
+                marker.color.g = 1.0;
+                marker.color.a = 1.0;
+
+                predictions_msg.markers.push_back(marker);
+                candidatePointsVizPub.publish(predictions_msg);
 
                 geometry_msgs::PoseStamped recoveryGoal;
                 recoveryGoal.header.frame_id = _frame_str;
                 recoveryGoal.header.stamp = ros::Time::now();
-                recoveryGoal.pose.position.x = g(0);
-                recoveryGoal.pose.position.y = g(1);
+                recoveryGoal.pose.position.x = recovery_point(0);
+                recoveryGoal.pose.position.y = recovery_point(1);
                 recoveryGoalPub.publish(recoveryGoal);
 
                 break;
@@ -755,6 +833,9 @@ void Planner::buildPrimitiveTree(){
         _mpc_goal_reached.store(false);
         ROS_WARN("Switching MPC and Planner back to nominal state");
 
+        // even though already did it, make sure sentTraj is truly empty
+        sentTraj.points.clear();
+
         estop_client.call(req, resp);
 
         ros::Duration(2).sleep();
@@ -769,20 +850,6 @@ void Planner::buildPrimitiveTree(){
         candidatePointsVizPub.publish(delete_msg);
 
         _robo_state.store(NOMINAL);
-        // _primitives_ready.store(false);
-
-        // ROS_WARN("generating motion primitive tree");
-        // _prim_tree->generate_motion_primitive_tree(3, {_odom[0], _odom[1], _odom[2]});
-        // _prim_tree->update_costmap(global_costmap);
-
-        // ROS_WARN("finding best trajectory");
-        // ros::Time s = ros::Time::now();
-        // _recovery_traj = _prim_tree->find_best_trajectory();
-        // ROS_WARN("Time was %.4f", (ros::Time::now()-s).toSec());
-
-        // _primitives_ready.store(true);
-        // _generate_primitives.store(false);
-        // _primitive_cv.notify_one();
     }
 
 }
@@ -802,7 +869,7 @@ void Planner::safetyLoop(){
     costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
 
     double t_start = (ros::Time::now() - start).toSec();
-    double t_end = (ros::Time::now() - start).toSec() + 20*_traj_dt;
+    double t_end = (ros::Time::now() - start).toSec() + _recovery_horizon*_traj_dt;
     int start_ind= std::min((int) (t_start/_traj_dt), (int) sentTraj.points.size()-1);
     int end_ind= std::min((int) (t_end/_traj_dt), (int) sentTraj.points.size()-1);
 
@@ -884,7 +951,7 @@ void Planner::safetyLoop(){
     std::cout << "\n";
 
     // multiply N consecutive confidences together along vector and exit if above threshold
-    int N = 6;
+    int N = _recovery_thresh;
     for (int i = 0; i < prediction_confidences.size()-(N-1); ++i){
         // multiply 10 consecutive confidences together along vector and exit if above threshold
         double conf = 1.0;
@@ -892,7 +959,7 @@ void Planner::safetyLoop(){
             conf *= prediction_confidences[i+j];
         }
 
-        if (conf > _recovery_thresh){
+        if (conf > .5){
             ROS_WARN("Confidence of failure is %.4f", conf);
             robo_state_lock.lock();
             _robo_state.store(RECOVERY);
@@ -1062,16 +1129,26 @@ void Planner::controlLoop(const ros::TimerEvent&){
     unsigned int map_x, map_y;
     _map.worldToMap(_odom(0), _odom(1), map_x, map_y);
 
-    if (!plan())
+    if (!plan()){
         count++;
-    else
+        if (count >= _failsafe_count)
+            _curr_horizon *= .9;
+    }
+    else{
         count = 0;
+        _curr_horizon /= .9;
+        if (_curr_horizon > _max_dist_horizon)
+            _curr_horizon = _max_dist_horizon;
+    }
 
     solverStatePub.publish(solver_state);
 
     if (count >= _failsafe_count){
-        if (plan(true))
+        if (plan(true)){
             count = 0;
+            _curr_horizon /= .9;
+        } else
+            _curr_horizon *= .9;
 
         solverStatePub.publish(solver_state);
     }
@@ -1118,6 +1195,8 @@ bool Planner::plan(bool is_failsafe){
                 Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
 
+    ROS_INFO("sent traj has size %lu", sentTraj.points.size());
+
     if (sentTraj.points.size() == 0 || _is_teleop || _is_goal_reset){
         initialPVAJ <<   Eigen::Vector3d(_odom(0),_odom(1),0), 
                         Eigen::Vector3d::Zero(), 
@@ -1126,7 +1205,6 @@ bool Planner::plan(bool is_failsafe){
     }
     else{
         not_first = true;
-        double factor = _const_factor;
       
         double t = (a-start).toSec() + _lookahead;
         double tmpT = t;
@@ -1184,6 +1262,8 @@ bool Planner::plan(bool is_failsafe){
 
     jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY(),
                 _map->getOriginX(), _map->getOriginY(), _map->getResolution());
+    double ax, ay;
+    jps.mapToWorld(sX, sY, ax, ay);
     jps.JPS();
 
     // ROS_INFO("getting path");
@@ -1242,15 +1322,16 @@ bool Planner::plan(bool is_failsafe){
         jpsPath = jpsFree;
     } else {
         std::vector<Eigen::Vector2d> newJPSPath;
-        if (getJPSIntersectionWithSphere(
+
+        if (truncateJPS(
             jpsPath, 
             newJPSPath,
-            Eigen::Vector2d(_odom[0], _odom[1]),
-            _max_dist_horizon, goalPoint)){
+            _curr_horizon))
+        {
 
             jpsPath = newJPSPath;
 
-            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1],0), 
+            finalPVAJ << Eigen::Vector3d(jpsPath.back()[0], jpsPath.back()[1],0), 
                 Eigen::Vector3d::Zero(), 
                 Eigen::Vector3d::Zero(),
                 Eigen::Vector3d::Zero();
@@ -1261,7 +1342,9 @@ bool Planner::plan(bool is_failsafe){
         }
 
     }
-    
+
+    ROS_INFO_STREAM("initial pva is: " << initialPVAJ);
+    ROS_INFO_STREAM("final pva is: " << finalPVAJ);
 
     /*************************************
     ******** PUBLISH JPS TO RVIZ *********
@@ -1299,13 +1382,6 @@ bool Planner::plan(bool is_failsafe){
         return false;
     }
     
-    // if (!isInPoly(hPolys[0], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0))) )
-    //     hPolys.insert(hPolys.begin(), corridor::genPoly(*_map, initialPVAJ(0,0), initialPVAJ(1,0)));
-    
-    // if (!isInPoly(hPolys.back(), Eigen::Vector2d(finalPVAJ(0,0), finalPVAJ(1,0))) ){
-    //     ROS_WARN("end was not in poly, adding extra polygon to correct this");
-    //     hPolys.insert(hPolys.end(), corridor::genPoly(*_map, finalPVAJ(0,0), finalPVAJ(1,0)));
-    // }
 
     bool is_in_corridor = false;
 
@@ -1320,11 +1396,6 @@ bool Planner::plan(bool is_failsafe){
         if (!is_in_corridor)
             is_in_corridor = isInPoly(hPolys[p], Eigen::Vector2d(initialPVAJ(0,0), initialPVAJ(1,0)));
     }
-
-    // if (!is_in_corridor)
-        // ROS_WARN("(%.2f, %.2f) NOT IN CORRIDOR", initialPVAJ(0,0), initialPVAJ(1,0));
-
-    // ROS_INFO("%d\t%d",!is_in_corridor, is_failsafe);
 
 
     solver_state.polys.poses.clear();
@@ -1424,7 +1495,7 @@ bool Planner::plan(bool is_failsafe){
         start = ros::Time::now();
     }
 
-    if(!_is_teleop)
+    if(!_is_teleop && _robo_state != RECOVERY)
         trajPub.publish(sentTraj);
 
     // ROS_INFO("visualizing");
@@ -1528,8 +1599,6 @@ void Planner::pubPolys(){
     corridor::corridorToMsg(helpers, helperCorridorMsg);
     // corridor::visualizePolytope(helpers, helperMeshPub, helperEdgePub, true);
 
-    // helperPolyPub.publish(helperCorridorMsg);
-    // corridorPub.publish(helperCorridorMsg);
     
     return;
 }

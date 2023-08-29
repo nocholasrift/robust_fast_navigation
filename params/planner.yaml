@@ -1,0 +1,26 @@
+# Planner logic params
+planner_frequency: .3
+lookahead: .35
+simplify_jps: true
+traj_dt: .05
+failsafe_count: 4
+plan_in_free: false
+max_dist_horizon: 3
+frame: "map"
+teleop: false
+
+recovery_thresh: 10
+recovery_horizon: 20
+recovery_samples: 10
+
+is_barn: false
+barn_goal_dist: 10.0
+
+# Physical dynamics parameters
+v_max: 1.2
+a_max: 1.2
+j_max: 4
+w_max: 2.0
+
+# For debug
+plan_once: false
