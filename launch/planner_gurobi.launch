@@ -2,7 +2,7 @@
 
     <arg name="barn" default="false" />
     <arg name="barn_dist" default="10.0" />
-    <arg name="max_vel" default=".8" />
+    <arg name="max_vel" default="1.2" />
     <arg name="enable_recover" default="false" />
     <arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />
 
@@ -21,7 +21,8 @@
     </node>
 
     <group if="$(arg enable_recover)">
-        <node name="run_inference_gp" pkg="robust_fast_navigation" type="run_inference_gp.py" output="screen" />
+        <!-- <node name="run_inference_gp" pkg="robust_fast_navigation" type="run_inference_gp.py" output="screen" /> -->
+        <node name="run_inference_regressions" pkg="robust_fast_navigation" type="run_inference_regressions.py" output="screen" />
     </group>
 
 </launch>

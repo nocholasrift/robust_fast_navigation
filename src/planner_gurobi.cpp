@@ -794,7 +794,7 @@ void Planner::buildPrimitiveTree(){
                         angle_diff = 2*M_PI - angle_diff;
 
                     // compute cost
-                    double score = .8*eucl_d/d_max + angle_diff/theta_max;
+                    double score = eucl_d/d_max + angle_diff/theta_max;
                     ROS_INFO("score of (%.2f, %.2f): %.2f\tprediction: %f", x, y, score, _predictions[i]);
                     if (cost < min_cost){
                         min_cost = cost;
@@ -973,42 +973,79 @@ void Planner::safetyLoop(){
     std::cout << "\n";
 
     // multiply N consecutive confidences together along vector and exit if above threshold
-    int N = _recovery_thresh;
-    for (int i = 0; i < prediction_confidences.size()-(N-1); ++i){
-        // multiply 10 consecutive confidences together along vector and exit if above threshold
-        double conf = 1.0;
-        for (int j = 0; j < N; ++j){
-            conf *= prediction_confidences[i+j];
-        }
+    // int N = _recovery_thresh;
+    // for (int i = 0; i < prediction_confidences.size()-(N-1); ++i){
+    //     // multiply 10 consecutive confidences together along vector and exit if above threshold
+    //     // double conf = 1.0;
+    //     // for (int j = 0; j < N; ++j){
+    //     //     conf *= prediction_confidences[i+j];
+    //     // }
+    //     // double expected_failures = 0.;
+    //     // for (int j = 0; j < prediction_confidences.size(); ++j){
+    //     //     expected_failures += prediction_confidences[i+j];
+    //     // }
 
-        if (conf > .5){
-            ROS_WARN("Confidence of failure is %.4f", conf);
-            robo_state_lock.lock();
-            _robo_state.store(RECOVERY);
-            _generate_primitives.store(true);
-            robo_state_lock.unlock();
 
-            // clear trajectory points to "reset" solver 
-            sentTraj.points.clear();
+    //     if (conf > .5){
+    //         ROS_WARN("Confidence of failure is %.4f", conf);
+    //         robo_state_lock.lock();
+    //         _robo_state.store(RECOVERY);
+    //         _generate_primitives.store(true);
+    //         robo_state_lock.unlock();
 
-            trajectory_msgs::JointTrajectory msg;
-            msg.header.stamp = ros::Time::now();
-            msg.header.frame_id = _frame_str;
+    //         // clear trajectory points to "reset" solver 
+    //         sentTraj.points.clear();
 
-            trajPub.publish(msg);
+    //         trajectory_msgs::JointTrajectory msg;
+    //         msg.header.stamp = ros::Time::now();
+    //         msg.header.frame_id = _frame_str;
 
-            geometry_msgs::Twist cmd_vel;
-            cmd_vel.linear.x = 0;
-            cmd_vel.angular.z = 0;
-            cmdVelPub.publish(cmd_vel);
+    //         trajPub.publish(msg);
 
-            state_transition_start_t = ros::Time::now();
+    //         geometry_msgs::Twist cmd_vel;
+    //         cmd_vel.linear.x = 0;
+    //         cmd_vel.angular.z = 0;
+    //         cmdVelPub.publish(cmd_vel);
 
-            _generate_primitive_cv.notify_one();
-            return;
-        }
+    //         state_transition_start_t = ros::Time::now();
+
+    //         _generate_primitive_cv.notify_one();
+    //         return;
+    //     }
+    // }
+
+    double expected_failures = 0.;
+    for (int j = 0; j < prediction_confidences.size(); ++j){
+        expected_failures += prediction_confidences[j];
     }
 
+    ROS_WARN("Expected failures: %.4f", expected_failures);
+    if (expected_failures > _recovery_thresh){
+        ROS_WARN("Expected failures: %.4f", expected_failures);
+        robo_state_lock.lock();
+        _robo_state.store(RECOVERY);
+        _generate_primitives.store(true);
+        robo_state_lock.unlock();
+
+        // clear trajectory points to "reset" solver 
+        sentTraj.points.clear();
+
+        trajectory_msgs::JointTrajectory msg;
+        msg.header.stamp = ros::Time::now();
+        msg.header.frame_id = _frame_str;
+
+        trajPub.publish(msg);
+
+        geometry_msgs::Twist cmd_vel;
+        cmd_vel.linear.x = 0;
+        cmd_vel.angular.z = 0;
+        cmdVelPub.publish(cmd_vel);
+
+        state_transition_start_t = ros::Time::now();
+
+        _generate_primitive_cv.notify_one();
+        return;
+    }
     // by this point we are close to obstacles and recovery behavior should be triggered
     // solver_state_lock.lock();
     // robo_state_lock.lock();
