@@ -161,6 +161,7 @@ private:
     ros::Publisher candidatePointsVizPub;
     ros::Publisher cmdVelPub;
     ros::Publisher recoveryGoalPub;
+    ros::Publisher expectedFailurePub;
 
     costmap_2d::Costmap2DROS* local_costmap, *global_costmap;
 
@@ -168,6 +169,8 @@ private:
     std::vector<Eigen::Vector2d> _prev_jps_path;
     std::vector<Eigen::MatrixX4d> hPolys;
     std::vector<float> _predictions;
+    
+    std::vector<std::tuple<Eigen::Vector3d, double> > _expected_failure_odoms;
 
     Eigen::MatrixXd _occ_point;
     // Trajectory<5> traj;

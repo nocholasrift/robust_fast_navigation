@@ -50,7 +50,7 @@ def get_time_to_intersect_poly(init_pva, polygon):
     vel = np.array(init_pva.velocities[:2])
 
     if vel[0] == 0 and vel[1] == 0:
-        return 1e2
+        return 10
 
     dist=0
     best_dist = np.inf
@@ -76,12 +76,39 @@ def get_time_to_intersect_poly(init_pva, polygon):
 
     return best_dist
 
+def get_time_to_intersect_poly_worst_case(init_pva, polygon):
+    point = init_pva.positions[:2]
+    acc = 4.
+
+    lowest_time = np.inf
+    for hyperplane in polygon:
+
+        if math.fabs(hyperplane[2]) >= 1e-3:
+            continue
+
+        a = hyperplane[0]
+        b = hyperplane[1]
+        d = hyperplane[3]
+
+        dist = np.abs(a*point[0] + b*point[1] + d) / np.sqrt(a**2 + b**2)
+        t = np.sqrt(2*dist/acc)
+
+        if t < lowest_time:
+            lowest_time = t
+
+    return lowest_time
+
 def extract_input_from_states(states):
     
+
     X = []
     for state in states:
         polygons = extract_polygons_from_pose_array(state.polys)
-        t_to_intersect = get_time_to_intersect_poly(state.initialPVA, polygons[0])
+        t_to_intersect = None
+        if len(states) == 10:
+            t_to_intersect = get_time_to_intersect_poly_worst_case(state.initialPVA, polygons[0])
+        else:
+            t_to_intersect = get_time_to_intersect_poly(state.initialPVA, polygons[0])
         X.append([t_to_intersect, len(polygons)])
 
     return X
@@ -122,7 +149,6 @@ def main():
 
 
         input_data = extract_input_from_states(states)
-        rospy.logerr(input_data)
 
         predictions = []
         start = time.time()

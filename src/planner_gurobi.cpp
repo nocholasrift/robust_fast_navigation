@@ -7,7 +7,6 @@
 #include <tf/tf.h>
 #include <std_msgs/Bool.h>
 #include <tf2_ros/buffer.h>
-#include <std_msgs/ColorRGBA.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
 #include <tf2_ros/transform_listener.h>
@@ -16,7 +15,6 @@
 #include <robust_fast_navigation/spline.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/planner_gurobi.h>
-#include <robust_fast_navigation/tinycolormap.hpp>
 
 #include <drake/common/random.h>
 
@@ -114,6 +112,9 @@ Planner::Planner(ros::NodeHandle& nh){
 
     recoveryGoalPub = 
         nh.advertise<geometry_msgs::PoseStamped>("/recoveryGoal", 0);
+
+    expectedFailurePub =
+        nh.advertise<visualization_msgs::Marker>("/expectedFailureViz", 0);
 
     // Services
     estop_client = nh.serviceClient<std_srvs::Empty>("/switch_mode");
@@ -370,7 +371,6 @@ void Planner::mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg){
 void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
 
     static ros::Time start;
-    static Eigen::VectorXd _prevOdom;
 
 	tf::Quaternion q(
 	    msg->pose.pose.orientation.x,
@@ -395,7 +395,6 @@ void Planner::odomcb(const nav_msgs::Odometry::ConstPtr& msg){
         _is_goal_set = true;
     }
 
-    _prevOdom = _odom;
     _is_init = true;
 }
 
@@ -604,8 +603,12 @@ void Planner::buildPrimitiveTree(){
             // sample 10 points from the HPolyhedron
             int attempts = 0;
             while (states.states.size() < _recovery_samples){
-                attempts++;
                 // ROS_WARN_STREAM("Sample: " << poly_drake.UniformSample(&generator).transpose());
+                // Eigen::VectorXd sample;
+                // if (attempts++ == 0)
+                //     sample = Eigen::Vector2d(_odom(0), _odom(1));
+                // else
+                    // sample = poly_drake.UniformSample(&generator);
                 Eigen::VectorXd sample = poly_drake.UniformSample(&generator);
             
                 // initial and final PVAJ
@@ -632,13 +635,6 @@ void Planner::buildPrimitiveTree(){
                                                   initialPVAJ, 
                                                   finalPVAJ,
                                                   jpsPath);
-                // bool success = solver_boilerplate(_simplify_jps,
-                //                                   _max_dist_horizon,
-                //                                   *_map,
-                //                                   _odom,
-                //                                   initialPVAJ, 
-                //                                   finalPVAJ,
-                //                                   jpsPath);
                                                   
                 if (!success)
                     continue;
@@ -725,7 +721,6 @@ void Planner::buildPrimitiveTree(){
                 } else
                     marker.color.r = 1.0;
 
-                std::cout << _predictions[i] << ", ";
                 marker.scale.x = 0.2*confidence;
                 marker.scale.y = 0.2*confidence;
                 marker.scale.z = 0.2*confidence;
@@ -738,7 +733,6 @@ void Planner::buildPrimitiveTree(){
 
                 predictions_msg.markers[i] = marker;
             }
-            std::cout << "\n";
 
 
             // publish visualization_msg
@@ -783,7 +777,6 @@ void Planner::buildPrimitiveTree(){
                     double y = states.states[i].initialPVA.positions[1];
                     Eigen::Vector2d point(x,y);
 
-                    double cost = 0.;
                     // compute euclidean distance
                     double eucl_d = (point - robo_pose).norm();
                     // compute heading cost, treat backwards point same as front points
@@ -794,10 +787,11 @@ void Planner::buildPrimitiveTree(){
                         angle_diff = 2*M_PI - angle_diff;
 
                     // compute cost
-                    double score = eucl_d/d_max + angle_diff/theta_max;
+                    // double score = eucl_d/d_max + angle_diff/theta_max;
+                    double score = _predictions[i];
                     ROS_INFO("score of (%.2f, %.2f): %.2f\tprediction: %f", x, y, score, _predictions[i]);
-                    if (cost < min_cost){
-                        min_cost = cost;
+                    if (score < min_cost){
+                        min_cost = score;
                         recovery_point = Eigen::Vector2d(x,y);
                     }
                 }
@@ -884,9 +878,8 @@ void Planner::safetyLoop(){
     std::unique_lock<std::mutex> robo_state_lock(_robo_state_mutex, std::defer_lock);
 
     // already in recovery state, no need to do anything
-    if (_robo_state == RECOVERY || sentTraj.points.size() == 0){
+    if (_robo_state == RECOVERY || sentTraj.points.size() == 0)
         return;
-    }
     
     costmap_2d::Costmap2D* _map = global_costmap->getCostmap();
 
@@ -954,6 +947,8 @@ void Planner::safetyLoop(){
         }
     }
 
+    _expected_failure_odoms.push_back(std::make_tuple(_odom, 0));
+
     // send to inference node
     solverStateArrayPub.publish(states);
     ROS_INFO("waiting for predictions");
@@ -972,56 +967,15 @@ void Planner::safetyLoop(){
 
     std::cout << "\n";
 
-    // multiply N consecutive confidences together along vector and exit if above threshold
-    // int N = _recovery_thresh;
-    // for (int i = 0; i < prediction_confidences.size()-(N-1); ++i){
-    //     // multiply 10 consecutive confidences together along vector and exit if above threshold
-    //     // double conf = 1.0;
-    //     // for (int j = 0; j < N; ++j){
-    //     //     conf *= prediction_confidences[i+j];
-    //     // }
-    //     // double expected_failures = 0.;
-    //     // for (int j = 0; j < prediction_confidences.size(); ++j){
-    //     //     expected_failures += prediction_confidences[i+j];
-    //     // }
-
-
-    //     if (conf > .5){
-    //         ROS_WARN("Confidence of failure is %.4f", conf);
-    //         robo_state_lock.lock();
-    //         _robo_state.store(RECOVERY);
-    //         _generate_primitives.store(true);
-    //         robo_state_lock.unlock();
-
-    //         // clear trajectory points to "reset" solver 
-    //         sentTraj.points.clear();
-
-    //         trajectory_msgs::JointTrajectory msg;
-    //         msg.header.stamp = ros::Time::now();
-    //         msg.header.frame_id = _frame_str;
-
-    //         trajPub.publish(msg);
-
-    //         geometry_msgs::Twist cmd_vel;
-    //         cmd_vel.linear.x = 0;
-    //         cmd_vel.angular.z = 0;
-    //         cmdVelPub.publish(cmd_vel);
-
-    //         state_transition_start_t = ros::Time::now();
-
-    //         _generate_primitive_cv.notify_one();
-    //         return;
-    //     }
-    // }
-
     double expected_failures = 0.;
-    for (int j = 0; j < prediction_confidences.size(); ++j){
+    for (int j = 0; j < prediction_confidences.size(); ++j)
         expected_failures += prediction_confidences[j];
-    }
+
+    std::get<1>(_expected_failure_odoms.back()) = expected_failures;
+    visualizeExpectedFailuresAlongTraj(_recovery_thresh, _expected_failure_odoms, expectedFailurePub);
 
     ROS_WARN("Expected failures: %.4f", expected_failures);
     if (expected_failures > _recovery_thresh){
-        ROS_WARN("Expected failures: %.4f", expected_failures);
         robo_state_lock.lock();
         _robo_state.store(RECOVERY);
         _generate_primitives.store(true);
@@ -1046,38 +1000,7 @@ void Planner::safetyLoop(){
         _generate_primitive_cv.notify_one();
         return;
     }
-    // by this point we are close to obstacles and recovery behavior should be triggered
-    // solver_state_lock.lock();
-    // robo_state_lock.lock();
-
-    // if (solver_state.status.data != 0 || true){
-    //     _robo_state.store(RECOVERY);
-    //     _generate_primitives.store(true);
-    //     _generate_primitive_cv.notify_one();
-
-    //     solver_state_lock.unlock();
-    //     robo_state_lock.unlock();
-
-    //     ROS_WARN("entering recovery mode");
-
-    //     trajectory_msgs::JointTrajectory msg;
-    //     msg.header.stamp = ros::Time::now();
-    //     msg.header.frame_id = _frame_str;
-
-    //     trajPub.publish(msg);
-
-    //     geometry_msgs::Twist cmd_vel;
-    //     cmd_vel.linear.x = 0;
-    //     cmd_vel.angular.z = 0;
-    //     cmdVelPub.publish(cmd_vel);
-
-    //     state_transition_start_t = ros::Time::now();
-        
-    //     return;
-    // }
-
-    // robo_state_lock.unlock();
-    // solver_state_lock.unlock();
+    
 
 }
 

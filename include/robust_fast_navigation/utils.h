@@ -1,14 +1,16 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <tuple>
 #include <vector>
 #include <iostream>
 #include <Eigen/Eigen>
 
+#include <std_msgs/ColorRGBA.h>
 #include <geometry_msgs/PoseArray.h>
 #include <costmap_2d/costmap_2d_ros.h>
+#include <visualization_msgs/Marker.h>
 #include <trajectory_msgs/JointTrajectory.h>
-
 #include <decomp_basis/data_type.h>
 
 #include <boost/geometry.hpp>
@@ -18,6 +20,7 @@
 #include <faster/faster_types.hpp>
 
 #include <robust_fast_navigation/JPS.h>
+#include <robust_fast_navigation/tinycolormap.hpp>
 
 
 /**********************************************************************
@@ -549,6 +552,45 @@ bool solver_boilerplate(bool simplify_jps,
 
 
     return true;
+}
+
+
+void visualizeExpectedFailuresAlongTraj(
+        double threshold,
+        const std::vector<std::tuple<Eigen::Vector3d, double> >& expected_failures,
+        const ros::Publisher& pub)
+{
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = "map";
+    marker.header.stamp = ros::Time::now();
+    marker.type = visualization_msgs::Marker::SPHERE_LIST;
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+
+
+    for (const auto& failure : expected_failures){
+        Eigen::Vector3d pos = std::get<0>(failure);
+        double t = std::get<1>(failure);
+
+        tinycolormap::Color color = tinycolormap::GetColor(t/threshold, tinycolormap::ColormapType::Viridis);
+        std_msgs::ColorRGBA color_msg;
+        color_msg.r = color.r();
+        color_msg.g = color.g();
+        color_msg.b = color.b();
+        color_msg.a = 1.0;
+
+        geometry_msgs::Point p;
+        p.x = pos[0];
+        p.y = pos[1];
+        p.z = pos[2];
+
+        marker.points.push_back(p);
+        marker.colors.push_back(color_msg);
+    }
+
+    pub.publish(marker);
 }
 
 
