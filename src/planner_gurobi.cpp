@@ -120,6 +120,7 @@ Planner::Planner(ros::NodeHandle& nh){
     estop_client = nh.serviceClient<std_srvs::Empty>("/switch_mode");
 
     // Subscribers
+    joySub = nh.subscribe("/joy", 1, &Planner::joycb, this);
     mapSub = nh.subscribe("/map", 1, &Planner::mapcb, this);
     goalSub = nh.subscribe("/planner_goal", 1, &Planner::goalcb, this);
     laserSub = nh.subscribe("/front/scan", 1, &Planner::lasercb, this);
@@ -143,6 +144,7 @@ Planner::Planner(ros::NodeHandle& nh){
     _planned = false;
     _is_goal_set = false;
     _map_received = false;
+    _stop_planning = false;
     _primitive_started = false;
     _is_costmap_started = false;
     
@@ -242,6 +244,13 @@ void Planner::spin(){
 
     ros::waitForShutdown();
 
+}
+
+void Planner::joycb(const sensor_msgs::Joy::ConstPtr& msg){
+    if (msg->buttons[1]){
+        ROS_ERROR("stopping plannin");
+        _stop_planning = true;
+    }
 }
 
 /**********************************************************************
@@ -1088,9 +1097,6 @@ void Planner::controlLoop(const ros::TimerEvent&){
         return;
     }
 
-    // if (_robo_state == NOMINAL && (ros::Time::now()-state_transition_start_t).toSec() < 2)
-    //     return;
-    
 
     /*************************************
     ************* UPDATE MAP *************
@@ -1392,6 +1398,9 @@ bool Planner::plan(bool is_failsafe){
     corridor::visualizePolytope(hPolys, meshPub, edgePub);
 
     // ROS_INFO("generated corridor of size %lu", hPolys.size());
+
+    if (_stop_planning)
+        return false;
 
     /*************************************
     ******** GENERATE  TRAJECTORY ********

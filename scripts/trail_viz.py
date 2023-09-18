@@ -3,14 +3,16 @@
 import copy
 import rospy
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 
 from nav_msgs.msg import Odometry 
 from std_msgs.msg import ColorRGBA
-from geometry_msgs.msg import PointStamped, Point
 from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import PointStamped, Point, PoseStamped
 
-cmap = plt.cm.get_cmap('viridis')
+# cmap = plt.cm.get_cmap('viridis')
+cmap = matplotlib.colormaps['plasma']
 
 trail_strip = Marker()
 trail_mark_arr = MarkerArray()
@@ -19,12 +21,19 @@ prev_odom = None
 
 trail_pub = None
 v = 0
-max_vel = 1
+max_vel = 1.2
 
 ros_timer = None
+is_recover = False
+rec_point = None
+
+def recoveryGoalCB(msg):
+    global is_recover, rec_point
+    is_recover = True
+    rec_point = msg.pose.position
 
 def odomCB(msg):
-    global odom_msg, v
+    global odom_msg, v, is_recover, rec_point
 
     if odom_msg != None:
         x1 = odom_msg.pose.pose.position.x
@@ -35,8 +44,12 @@ def odomCB(msg):
 
         v = np.linalg.norm([x1-x2,y1-y2])*30
 
+        if is_recover and np.linalg.norm([x1-rec_point.x,y1-rec_point.y]) < .2:
+            is_recover = False
+
     odom_msg = msg
 
+    
 def updateTrail(event):
 
     global odom_msg, prev_odom, cmap, v, trail_mark_arr, trail_strip, max_vel, ros_timer
@@ -73,16 +86,19 @@ def updateTrail(event):
     trail_strip.action = Marker.ADD
     trail_strip.type = Marker.LINE_STRIP
 
-    trail_strip.scale.x = .1
+    trail_strip.scale.x = .2
 
     trail_strip.pose.orientation.w = 1
 
-    trail_size = 100
+    trail_size = 100000
 
     p1 = Point()
     p1.x = odom_x
     p1.y = odom_y
-    p1.z = .1
+    if is_recover:
+        p1.z = 1.
+    else:
+        p1.z = 0.
     
     if len(trail_strip.points) >= trail_size:
         del trail_strip.points[0]
@@ -90,12 +106,19 @@ def updateTrail(event):
 
     trail_strip.points.append(p1)
 
-    rgba = cmap(v/max_vel)
+    frac = v / max_vel
+    rgba = cmap(frac)
+
     color = ColorRGBA()
-    color.r = rgba[0]
-    color.g = rgba[1]
-    color.b = rgba[2]
     color.a = 1
+    if is_recover:
+        color.r = 0
+        color.g = 1
+        color.b = 0
+    else:
+        color.r = rgba[0]
+        color.g = rgba[1]
+        color.b = rgba[2]
 
     trail_strip.colors.append(color)
 
@@ -108,10 +131,8 @@ def main():
 
     rospy.init_node("trail_publisher")
 
-    max_vel = rospy.get_param("/trail_viz/max_velocity", "1.0")
-    print("max vel is", max_vel)
-
     odom_sub = rospy.Subscriber("/gmapping/odometry", Odometry, odomCB)
+    rec_goal_sub = rospy.Subscriber("/recoveryGoal", PoseStamped, recoveryGoalCB)
     trail_pub = rospy.Publisher("/trail", Marker, queue_size=1)
     trail_timer = rospy.Timer(rospy.Duration(.05), updateTrail)
     

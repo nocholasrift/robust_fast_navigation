@@ -13,6 +13,7 @@
 #include <std_msgs/Bool.h>
 #include <nav_msgs/Path.h>
 #include <std_srvs/Empty.h>
+#include <sensor_msgs/Joy.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Point.h>
@@ -60,6 +61,7 @@ protected:
 private:
 
     // callbacks
+    void joycb(const sensor_msgs::Joy::ConstPtr& msg);
     void odomcb(const nav_msgs::Odometry::ConstPtr& msg);
     void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
     void mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg);
@@ -93,6 +95,7 @@ private:
     bool _started_costmap;
     bool _is_goal_set;
     bool _is_teleop;
+    bool _stop_planning;
     bool _is_goal_reset;
     bool _plan_once;
     bool _simplify_jps;
@@ -127,6 +130,7 @@ private:
     ros::ServiceClient estop_client;
 
     // Subscribers
+    ros::Subscriber joySub;
     ros::Subscriber mapSub;
     ros::Subscriber occSub;
     ros::Subscriber odomSub;
