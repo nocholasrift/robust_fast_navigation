@@ -5,12 +5,9 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /MPC_Prediction1
+        - /Status1
+        - /LaserScan1
         - /Odometry1/Shape1
-        - /MPPI1/Marker1
-        - /MPPI1/Marker2
-        - /MPPI1/Marker3
-        - /Path1
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -30,7 +27,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: LaserScan
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -42,7 +39,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
-      Enabled: false
+      Enabled: true
       Line Style:
         Line Width: 0.029999999329447746
         Value: Lines
@@ -55,7 +52,7 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
-      Value: false
+      Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -79,11 +76,21 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.05000000074505806
       Style: Flat Squares
-      Topic: /front/scan
+      Topic: /ouster/scan
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: false
+      Name: Map
+      Topic: /robust_planner/global_costmap/costmap
+      Unreliable: false
+      Use Timestamp: false
+      Value: false
     - Alpha: 0.699999988079071
       Class: rviz/Map
       Color Scheme: map
@@ -98,13 +105,13 @@ Visualization Manager:
       Buffer Length: 1
       Class: rviz/Path
       Color: 102; 86; 135
-      Enabled: false
+      Enabled: true
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.05000000074505806
-      Name: JPS
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
       Offset:
         X: 0
         Y: 0
@@ -117,47 +124,55 @@ Visualization Manager:
       Shaft Length: 0.10000000149011612
       Topic: /jpsPath
       Unreliable: false
-      Value: false
-    - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /visualizer/edge_helper
-      Name: Helper_Poly_Edge
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: false
-    - Class: rviz/Marker
-      Enabled: false
-      Marker Topic: /visualizer/mesh_helper
-      Name: Helper_Poly_mesh
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: false
+      Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /visualizer/edge
-      Name: Poly_Edge
+      Name: Marker
       Namespaces:
-        edge: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /visualizer/mesh
-      Name: Poly_Mesh
+      Name: Marker
       Namespaces:
-        mesh: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /MINCO_wpts
-      Name: MINCO_wpts
+      Name: Marker
       Namespaces:
         {}
       Queue Size: 100
       Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 92; 53; 102
+      Enabled: false
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /spline_path
+      Unreliable: false
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -168,7 +183,7 @@ Visualization Manager:
       Length: 0.30000001192092896
       Line Style: Billboards
       Line Width: 0.10000000149011612
-      Name: MPC_Prediction
+      Name: Path
       Offset:
         X: 0
         Y: 0
@@ -182,6 +197,30 @@ Visualization Manager:
       Topic: /mpc_prediction
       Unreliable: false
       Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /gaps_viz
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz/Pose
+      Color: 107; 39; 55
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Pose
+      Queue Size: 10
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic: /gap_goal
+      Unreliable: false
+      Value: true
     - Alpha: 1
       Arrow Length: 0.30000001192092896
       Axes Length: 0.30000001192092896
@@ -191,7 +230,7 @@ Visualization Manager:
       Enabled: true
       Head Length: 0.07000000029802322
       Head Radius: 0.029999999329447746
-      Name: Intermediate_Goal
+      Name: PoseArray
       Queue Size: 10
       Shaft Length: 0.23000000417232513
       Shaft Radius: 0.009999999776482582
@@ -199,14 +238,22 @@ Visualization Manager:
       Topic: /intermediate_goal
       Unreliable: false
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /gaps
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
     - Alpha: 1
       Class: rviz/PointStamped
       Color: 176; 132; 204
       Enabled: false
       History Length: 1
-      Name: Current_Reference
+      Name: PointStamped
       Queue Size: 10
-      Radius: 0.15000000596046448
+      Radius: 0.20000000298023224
       Topic: /traj_point
       Unreliable: false
       Value: false
@@ -248,7 +295,15 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /MINCO_path
-      Name: Trajectory
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /gaps_viz
+      Name: Marker
       Namespaces:
         {}
       Queue Size: 100
@@ -256,95 +311,27 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /paddedObs
-      Name: Padded_Obs
+      Name: Marker
       Namespaces:
-        padded: true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 1
       Class: rviz/Polygon
       Color: 25; 255; 0
       Enabled: true
-      Name: Footprint
+      Name: Polygon
       Queue Size: 10
       Topic: /robust_planner/global_costmap/footprint
       Unreliable: false
       Value: true
-    - Class: rviz/Group
-      Displays:
-        - Class: rviz/Marker
-          Enabled: true
-          Marker Topic: /mppi/mppi/traj_viz
-          Name: Marker
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-        - Class: rviz/Marker
-          Enabled: true
-          Marker Topic: /mppi/mppi/wypts_viz
-          Name: Marker
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-        - Class: rviz/Marker
-          Enabled: true
-          Marker Topic: /mppi_poly_edge
-          Name: Marker
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-      Enabled: true
-      Name: MPPI
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /candidatePointsViz
-      Name: MarkerArray
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
     - Class: rviz/Marker
       Enabled: true
-      Marker Topic: /trail
+      Marker Topic: /force
       Name: Marker
       Namespaces:
         {}
       Queue Size: 100
-      Value: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /thick_MINCO_path
-      Name: Marker
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 0; 0; 0
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Billboards
-      Line Width: 0.10000000149011612
-      Name: Path
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Queue Size: 10
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic: /correct_mpc
-      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
@@ -373,7 +360,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: -1.7149994373321533
+      Angle: -21.98655891418457
       Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -383,10 +370,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 26.356277465820312
+      Scale: -45.10175323486328
       Target Frame: <Fixed Frame>
-      X: 4.716653347015381
-      Y: -6.571435928344727
+      X: -1.2424378395080566
+      Y: 1.121488332748413
     Saved: ~
 Window Geometry:
   Displays:

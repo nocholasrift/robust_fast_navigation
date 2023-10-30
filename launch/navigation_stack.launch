@@ -7,27 +7,9 @@
     <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
     <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
 
-    <!-- <include file="$(find robust_fast_navigation)/launch/pointcloud_to_laser.launch" /> -->
     <include file="$(find robust_fast_navigation)/launch/gmapping.launch" />
-    <!-- <include file="$(find robust_fast_navigation)/launch/esdf.launch" /> -->
 
-    <!-- <node name="gap_detector" pkg="gap_detection" type="gap_detector" output="screen">
-        <param name="goal_x" value="$(arg goal_x)" />
-        <param name="goal_y" value="$(arg goal_y)" />
-        <param name="left" value="-100" />
-        <param name="top" value="-100" />
-        <param name="bwidth" value="200" />
-        <param name="bheight" value="200" />
-        <param name="gapThresh" value=".65" />
-        <param name="dist" value="10" />
-        <remap from="/odometry/filtered" to="/gmapping/odometry" />
-	</node> -->
-
-    <!-- <node name="gmapping_pose_pub" pkg="robust_fast_navigation" type="getGmappingPose.py" output="screen" /> -->
     <node name="publish_pf_pose" pkg="robust_fast_navigation" type="publish_pf_pose" output="screen" />
-    <!-- <node name="cone" pkg="robust_fast_navigation" type="cone.py" output="screen" /> -->
-    <!-- <node name="pot_field" pkg="robust_fast_navigation" type="potential_field.py" output="screen" /> -->
-    <!-- <node name="pd_controller" pkg="robust_fast_navigation" type="pd_controller.py" output="screen" /> -->
 
     <!-- MPC Tracking -->
     <include file="$(find mpc_trajectory_tracking)/launch/jackal_mpc_track.launch" >
