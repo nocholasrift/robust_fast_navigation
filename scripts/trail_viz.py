@@ -35,7 +35,7 @@ def recoveryGoalCB(msg):
 def odomCB(msg):
     global odom_msg, v, is_recover, rec_point
 
-    if odom_msg != None:
+    if odom_msg is not None:
         x1 = odom_msg.pose.pose.position.x
         y1 = odom_msg.pose.pose.position.y
 

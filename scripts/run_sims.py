@@ -38,7 +38,7 @@ def shutdown():
     global gazebo_process, nav_stack_process, planner_process
     
     rospy.loginfo("*************** shutting nodes down now! ***************")
-    if bag_process != None:
+    if bag_process is not None:
         bag_process.terminate()
         bag_process.wait()
 

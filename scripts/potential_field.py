@@ -64,7 +64,7 @@ class potential_field:
 #------------------------------------------
 
     def compute_potential(self):
-        if self.laser == None or self.odom == None:
+        if self.laser is None or self.odom is None:
             return
 
         Q = .7
@@ -106,7 +106,7 @@ class potential_field:
 
         self.publish_sum(vector_sum[0], vector_sum[1])
         
-        if self.cmd != None:
+        if self.cmd is not None:
             quat = self.odom.pose.pose.orientation
             (yaw_r, _, _)=euler_from_quaternion((quat.x,quat.y,quat.z,quat.w))
 
@@ -145,7 +145,7 @@ class potential_field:
         vector = Point(vec[0], vec[1], 0)
         self.potential_field_pub.publish(vector)
         
-        if self.odom != None:
+        if self.odom is not None:
             # rospy.logerr("HELLO????")
             msg = Marker()
             msg.header.frame_id = "map"

@@ -76,7 +76,7 @@ def getLidarData(data):
 def getJackalPos(data):
     global jackal_pos, initial_jackal_pos
 
-    if initial_jackal_pos == None:
+    if initial_jackal_pos is None:
         initial_jackal_pos = data
 
     jackal_pos = data
@@ -85,7 +85,7 @@ def getJackalPos(data):
 def getJackalPosOdom(data):
     global jackal_pos, initial_jackal_pos
 
-    if initial_jackal_pos == None:
+    if initial_jackal_pos is None:
         initial_jackal_pos = data.pose.pose
 
     jackal_pos = data.pose.pose
@@ -106,7 +106,7 @@ def getJackalPosVicon(data):
         jackal_pos.orientation.z = data.transform.rotation.z
         jackal_pos.orientation.w = data.transform.rotation.w
 
-        if initial_jackal_pos == None:
+        if initial_jackal_pos is None:
             initial_jackal_pos = jackal_pos
 
     else:
@@ -155,7 +155,7 @@ def identify_occlusions():
     global counter, angles, regions, initial_jackal_pos, jackal_pos, last_window_pos, MAX_RANGE, occ_man
 
     colors = OcclusionState.colors
-    if initial_jackal_pos == None or regions == None:
+    if initial_jackal_pos is None or regions is None:
         return
 
     # Number of meters for threshold
@@ -388,7 +388,7 @@ def identify_occlusions():
             )
             occlusions.append(occ)
 
-    if include_frontiers and frontiers != None:
+    if include_frontiers and frontiers is not None:
 
         for frontier in frontiers:
             occlusions.append(frontier)
@@ -571,7 +571,7 @@ def calculateOpenCentroids(free_regions):
 
 
 def updateMap(data):
-    if occ_man == None:
+    if occ_man is None:
         return
 
     occ_man.update_map(data)
@@ -579,7 +579,7 @@ def updateMap(data):
 
 def findEscapeGoal():
 
-    if regions == None or jackal_pos == None:
+    if regions is None or jackal_pos is None:
         return
 
     move_base_goal = occ_man.current_goal
@@ -715,9 +715,9 @@ def main():
     while not rospy.is_shutdown():
         rate.sleep()
 
-        if angles == None:
+        if angles is None:
 
-            if incA == None:
+            if incA is None:
                 continue
 
             angles = [minA + i * incA for i in range(SAMPLES)]
