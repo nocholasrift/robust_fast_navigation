@@ -1256,6 +1256,7 @@ bool Planner::plan(bool is_failsafe){
 
     jps.set_map(_map->getCharMap(), _map->getSizeInCellsX(), _map->getSizeInCellsY(),
                 _map->getOriginX(), _map->getOriginY(), _map->getResolution());
+
     double ax, ay;
     jps.mapToWorld(sX, sY, ax, ay);
     jps.JPS();
