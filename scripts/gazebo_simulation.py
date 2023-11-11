@@ -16,6 +16,8 @@ def create_model_state(x, y, z, angle):
     model_state.pose.position.y = y
     model_state.pose.position.z = z
     model_state.pose.orientation = Quaternion(0, 0, np.sin(angle/2.), np.cos(angle/2.))
+    print("angle is: ", angle)
+    print("ORIENTATION IS ", model_state.pose.orientation)
     model_state.reference_frame = "world"
 
     return model_state
