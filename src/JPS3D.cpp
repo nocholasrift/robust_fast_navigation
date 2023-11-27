@@ -851,6 +851,21 @@ bool JPS3DPlan::add_to_parents(const JPS3DNode_t &node, const JPS3DNode_t &paren
     return true;
 }
 
+bool JPS3DPlan::isOccupied(int x, int y, int z){
+    if (!octree){
+        std::cerr << "Octree not set" << std::endl;
+        return false;
+    }
+
+    // convert coordinates to Octomap key
+    octomap::OcTree key;
+    octree->coordToKeyChecked(x, y, z, key);
+
+    octomap::OcTreeNode* node = octree->search(key);
+
+    return (node && node->getOccupancy() > octree->getOccupancyThres());
+}
+
 bool JPS3DPlan::jump(const JPS3DNode_t &start)
 {
     int dirx = start.dirx;
@@ -867,6 +882,11 @@ bool JPS3DPlan::jump(const JPS3DNode_t &start)
 
     JPS3DNode_t curr = start;
     closedSet[curr.z * sizeX * sizeY + curr.y * sizeX + curr.x] = true;
+
+    int norm1 = std::abs(dirx) + std::abs(diry) + std::abs(dirz);
+    int num_neighbors = jps3d_neib.nsz[norm1][0];
+    int num_forced_neighbors = jps3d_neib.nsz[norm1][1];
+    int idx = (dirx + 1) + 3 * (diry + 1) + 9 * (dirz + 1);
 
     while (true)
     {
@@ -894,5 +914,86 @@ bool JPS3DPlan::jump(const JPS3DNode_t &start)
             add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
             return true;
         }
+
+        // iterate through the neighbors of n which are always added
+        for (int i = 0; i < num_neighbors; ++i)
+        {
+            int dx = jps3d_neib.ns[idx][0][i];
+            int dy = jps3d_neib.ns[idx][1][i];
+            int dz = jps3d_neib.ns[idx][2][i];
+
+            // add dx, dy, dz to n and place on queue
+            JPS3DNode_t n2 = n;
+            n2.x += dx;
+            n2.y += dy;
+            n2.z += dz;
+            add_to_parents(n2, curr, cost);
+            add_to_queue(n2.x, n2.y, n2.z, dx, dy, dz, cost + 1);
+        }
+
+        bool found_forced = false;
+
+        // add forced neighbors to queue if f1 is occupied
+        for (int i = 0; i < num_forced_neighbors; ++i)
+        {
+            int nx = n.x + jps3d_neib.f1[idx][0][i];
+            int ny = n.y + jps3d_neib.f1[idx][1][i];
+            int nz = n.z + jps3d_neib.f1[idx][2][i];
+
+            // if f1 is occupied, add f2 to queue
+            if (isOccupied(nx, ny, nz))
+            {
+                JPS3DNode_t n2 = n;
+                n2.x += jps3d_neib.f2[idx][0][i];
+                n2.y += jps3d_neib.f2[idx][1][i];
+                n2.z += jps3d_neib.f2[idx][2][i];
+                add_to_parents(n2, curr, cost);
+                add_to_queue(n2.x, n2.y, n2.z, jps3d_neib.f2[idx][0][i], jps3d_neib.f2[idx][1][i], jps3d_neib.f2[idx][2][i], cost + 1);
+
+                found_forced = true;
+            }
+        }
+
+        if (found_forced)
+            return true;
     }
+}
+
+void JPSPlan::JPS()
+{
+
+    closedSet.clear();
+    parents.clear();
+
+    // add every direction to the queue
+    for (int dx = -1; dx < 2; ++dx)
+    {
+        for (int dy = -1; dy < 2; ++dy)
+        {
+            for (int dz = -1; dz < 2; ++dz)
+            {
+                if (dx == 0 && dy == 0 && dz == 0)
+                    continue;
+                add_to_queue(startX, startY, startZ, dx, dy, dz, 0);
+            }
+        }
+    }
+
+    parents[startZ * sizeX * sizeY + startY * sizeX + startX] = std::make_pair(startZ * sizeX * sizeY + startY * sizeX + startX, 0);
+
+    while (q.size() > 0)
+    {
+        JPS3DNode_t node = q.top();
+        q.pop();
+
+        if (node.x == destX && node.y == destY && node.z == destZ)
+            return;
+
+        jump(node);
+    }
+}
+
+std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify)
+{
+
 }
