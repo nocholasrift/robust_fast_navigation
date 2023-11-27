@@ -6,6 +6,8 @@
 #include <utility>
 #include <unordered_map>
 
+#include <octomap/OcTree.h>
+
 #include <Eigen/Core>
 
 struct JPS3DNode{
@@ -80,6 +82,8 @@ private:
 
     double euclidean_dist(int x, int y, int z);
 
+    bool isOccupied(int x, int y, int z);
+
     // bool explore_straight(const JPS3DNode_t& start);
     // bool explore_diagonal(const JPS3DNode_t& start);
     bool jump(const JPS3DNode_t& start);
@@ -102,6 +106,8 @@ private:
     std::priority_queue<JPS3DNode_t, std::deque<JPS3DNode_t>, Compare> q;
 
     JPS3DNeib jps3d_neib;
+
+    const std::shared_ptr<octomap::OcTree> _octree;
 };
 
 #endif
