@@ -37,6 +37,9 @@ find_package(drake REQUIRED)
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 
+find_package(jps3d REQUIRED)
+find_package(octomap REQUIRED)
+
 add_message_files(
       DIRECTORY
       FILES
@@ -72,6 +75,9 @@ include_directories(
   ${DECOMP_UTIL_INCLUDE_DIRS}
   ${GUROBI_INCLUDE_DIRS}
   ${GINAC_INCLUDE_DIRS}
+
+  ${JPS3D_INCLUDE_DIRS}
+  ${OCTOMAP_INCLUDE_DIRS}
 )
 
 add_executable(robust_planner src/planner.cpp src/planner_node.cpp src/JPS.cpp)
@@ -127,5 +133,13 @@ target_link_libraries(minvo_test
   ${catkin_LIBRARIES}
   ${GINAC_LIBRARIES}
   ${CLN_LIBRARIES}
+  Eigen3::Eigen
+)
+
+add_executable(jps_test src/JPS_test.cpp src/JPS3D.cpp)
+target_link_libraries(jps_test
+  ${catkin_LIBRARIES}
+  ${JPS3D_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
   Eigen3::Eigen
 )

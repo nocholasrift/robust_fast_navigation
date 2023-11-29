@@ -3,6 +3,7 @@
 
 #include <queue>
 #include <vector>
+#include <memory>
 #include <utility>
 #include <unordered_map>
 
@@ -56,7 +57,7 @@ class Compare{
     public:
     // returns True if first argument is higher priority than n2 (lower cost)
     bool operator()(const JPS3DNode_t& n1, const JPS3DNode_t& n2){
-        return n1.cost+n1.manhattan > n2.cost+n2.manhattan;
+        return n1.cost+n1.heuristic > n2.cost+n2.heuristic;
     }
 };
 
@@ -66,11 +67,10 @@ public:
     JPS3DPlan();
     
     void set_occ_value(double x);
-    void set_start(int x, int y, int z);
-    void set_destination(int x, int y, int z);
-    void set_map(unsigned char* map, int sizeX, int sizeY, int sizeZ,
-                 double originX, double originY, double originZ, double resolution);
-    void JPS3D();
+    void set_start(double x, double y, double z);
+    void set_destination(double x, double y, double z);
+    void set_map(const std::shared_ptr<octomap::OcTree> &octree);
+    void JPS();
 
     std::vector<Eigen::Vector2d> getPath(bool simplify = true);
     std::vector<Eigen::Vector2d> simplifyPath(const std::vector<Eigen::Vector2d>& path);
@@ -89,6 +89,7 @@ private:
     bool jump(const JPS3DNode_t& start);
     void add_to_queue(int x, int y, int z, int dirx, int diry, int dirz, double cost);
     bool add_to_parents(const JPS3DNode_t& node, const JPS3DNode_t& parent, double cost);
+    bool get_map_key(double x, double y, double z, std::vector<int>& key);
 
     bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
         int offset_b, unsigned int offset, unsigned int max_range, unsigned int& term);
@@ -101,13 +102,14 @@ private:
     unsigned char* _map;
 
     int sizeX, sizeY, sizeZ, startX, startY, startZ, destX, destY, destZ, goalInd;
-    double occupied_val, originX, originY, originZ, resolution;
+    double occupied_val, originX, originY, originZ, resolution,
+        minx, miny, minz, maxx, maxy, maxz;
 
     std::priority_queue<JPS3DNode_t, std::deque<JPS3DNode_t>, Compare> q;
 
     JPS3DNeib jps3d_neib;
 
-    const std::shared_ptr<octomap::OcTree> _octree;
+    std::shared_ptr<octomap::OcTree> octree_;
 };
 
 #endif

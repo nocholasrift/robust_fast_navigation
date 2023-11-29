@@ -737,7 +737,7 @@ void JPS3DNeib::FNeib(int dx, int dy, int dz, int norm1, int dev,
 /**********************************************************************
   Simple constructor which sets occupied_val field to default of 100.
 ***********************************************************************/
-JPS3DPlan::JPS3DPlan()
+JPS3DPlan::JPS3DPlan() : octree_(nullptr)
 {
     occupied_val = 100;
     originX = 0;
@@ -753,11 +753,29 @@ JPS3DPlan::JPS3DPlan()
     - x: starting x position
     - y: starting y position
 ***********************************************************************/
-void JPS3DPlan::set_start(int x, int y, int z)
+void JPS3DPlan::set_start(double x, double y, double z)
 {
-    startX = x;
-    startY = y;
-    startZ = z;
+    if (!octree_)
+    {
+        std::cerr << "Octree not set" << std::endl;
+        return;
+    }
+
+    // convert xyz to grid cell coordinates
+    octomap::point3d start_point(x, y, z);
+
+    octomap::OcTreeKey key;
+    if (!octree_->coordToKeyChecked(start_point, key))
+    {
+        std::cerr << "Could not convert start point to key" << std::endl;
+        return;
+    }
+
+    startX = key[0];
+    startY = key[1];
+    startZ = key[2];
+
+    std::cout << "start: " << startX << ", " << startY << ", " << startZ << std::endl;
 }
 
 /**********************************************************************
@@ -768,11 +786,11 @@ void JPS3DPlan::set_start(int x, int y, int z)
     - x: destination x position
     - y: destination y position
 ***********************************************************************/
-void JPS3DPlan::set_destination(int x, int y, int z)
+void JPS3DPlan::set_destination(double x, double y, double z)
 {
-    destX = x;
-    destY = y;
-    destZ = z;
+    // destX = x;
+    // destY = y;
+    // destZ = z;
 }
 
 double JPS3DPlan::euclidean_dist(int x, int y, int z)
@@ -791,6 +809,43 @@ double JPS3DPlan::euclidean_dist(int x, int y, int z)
 void JPS3DPlan::set_occ_value(double x)
 {
     occupied_val = x;
+}
+
+void JPS3DPlan::set_map(const std::shared_ptr<octomap::OcTree> &octree)
+{
+    octree_ = octree;
+
+    octree_->getMetricMin(minx, miny, minz);
+    octree_->getMetricMax(maxx, maxy, maxz);
+
+    double resolution = octree_->getResolution();
+
+    sizeX = (maxx - minx) / resolution;
+    sizeY = (maxy - miny) / resolution;
+    sizeZ = (maxz - minz) / resolution;
+}
+
+bool JPS3DPlan::get_map_key(double x, double y, double z, std::vector<int> &key)
+{
+    if (!octree_)
+    {
+        std::cerr << "Octree not set" << std::endl;
+        return false;
+    }
+
+    // convert xyz to grid cell coordinates
+    octomap::point3d point(x, y, z);
+
+    octomap::OcTreeKey key_;
+    if (x < minx || x > maxx || y < miny || y > maxy || z < minz || z > maxz)
+        return false;
+
+    key.push_back(key_[0]);
+    key.push_back(key_[1]);
+    key.push_back(key_[2]);
+
+    return true;
+
 }
 
 /**********************************************************************
@@ -851,19 +906,21 @@ bool JPS3DPlan::add_to_parents(const JPS3DNode_t &node, const JPS3DNode_t &paren
     return true;
 }
 
-bool JPS3DPlan::isOccupied(int x, int y, int z){
-    if (!octree){
+bool JPS3DPlan::isOccupied(int x, int y, int z)
+{
+    if (!octree_)
+    {
         std::cerr << "Octree not set" << std::endl;
         return false;
     }
 
     // convert coordinates to Octomap key
-    octomap::OcTree key;
-    octree->coordToKeyChecked(x, y, z, key);
+    octomap::OcTreeKey key;
+    octree_->coordToKeyChecked(x, y, z, key);
 
-    octomap::OcTreeNode* node = octree->search(key);
+    octomap::OcTreeNode *node = octree_->search(key);
 
-    return (node && node->getOccupancy() > octree->getOccupancyThres());
+    return (node && node->getOccupancy() > octree_->getOccupancyThres());
 }
 
 bool JPS3DPlan::jump(const JPS3DNode_t &start)
@@ -911,7 +968,7 @@ bool JPS3DPlan::jump(const JPS3DNode_t &start)
         if (n.x == destX && n.y == destY && n.z == destZ)
         {
             add_to_parents(n, curr, cost);
-            add_to_queue(n.x, n.y, n.dirx, n.diry, cost);
+            add_to_queue(n.x, n.y, n.z, n.dirx, n.diry, n.dirz, cost);
             return true;
         }
 
@@ -959,7 +1016,7 @@ bool JPS3DPlan::jump(const JPS3DNode_t &start)
     }
 }
 
-void JPSPlan::JPS()
+void JPS3DPlan::JPS()
 {
 
     closedSet.clear();
@@ -993,7 +1050,8 @@ void JPSPlan::JPS()
     }
 }
 
-std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify)
+std::vector<Eigen::Vector2d> JPS3DPlan::getPath(bool simplify)
 {
 
+    return {};
 }
