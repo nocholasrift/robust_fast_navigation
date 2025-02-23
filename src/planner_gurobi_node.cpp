@@ -1,8 +1,8 @@
-#include <ros/ros.h>
 #include <robust_fast_navigation/planner_gurobi.h>
+#include <ros/ros.h>
 
-int main(int argc, char **argv){
-
+int main(int argc, char **argv)
+{
     ros::init(argc, argv, "robust_planner");
     ros::NodeHandle nh;
 

@@ -1,26 +1,27 @@
 #ifndef GUROBI_SOLVER_H
 #define GUROBI_SOLVER_H
 
-#include <vector>
 #include <Eigen/Core>
+#include <vector>
+
 #include "gurobi_c++.h"
 
-class SolverCallback : public GRBCallback {
-public:
+class SolverCallback : public GRBCallback
+{
+   public:
     bool _terminate;
-    SolverCallback(){
-        _terminate = false;
-    }
+    SolverCallback() { _terminate = false; }
 
-protected:
-    void cb(){
-        if(_terminate)
-            GRBCallback::abort();
+   protected:
+    void cb()
+    {
+        if (_terminate) GRBCallback::abort();
     }
 };
 
-class TrajectorySolver{
-public:
+class TrajectorySolver
+{
+   public:
     TrajectorySolver();
     ~TrajectorySolver();
 
@@ -36,12 +37,10 @@ public:
     void setInitialState(const Eigen::Matrix3d& PVA);
     void setPolys(const std::vector<Eigen::MatrixX4d>& hPolys);
 
-
-private:
-
+   private:
     // To save computation on pointer dereferences I will initialize here to keep m static
     GRBEnv* _env = new GRBEnv();
-    GRBModel _m = GRBModel(*_env);
+    GRBModel _m  = GRBModel(*_env);
 
     std::vector<Eigen::MatrixX4d> _hPolys;
     std::vector<Eigen::Matrix4d> bs2mv_matrices, bs2be_matrices;
@@ -53,7 +52,7 @@ private:
 
     bool forceFinalVA, _use_minvo;
 
-    double _dt; // time allocation per segment
+    double _dt;  // time allocation per segment
     double _v_max;
     double _a_max;
     double _j_max;
@@ -64,7 +63,6 @@ private:
     std::vector<GRBConstr> _poly_constraints;
     std::vector<GRBConstr> _initial_conditions;
     std::vector<GRBConstr> _dynamic_constraints;
-
 
     GRBLinExpr getPos(int segment, double t, int axis);
     GRBLinExpr getVel(int segment, double t, int axis);
@@ -87,12 +85,11 @@ private:
     std::vector<GRBLinExpr> getCP3(int segment);
 
     Eigen::Matrix4d M_pos_bs2mv_seg0, M_pos_bs2mv_seg1, M_pos_bs2mv_rest, M_pos_bs2mv_seg_last2,
-    M_pos_bs2mv_seg_last;
+        M_pos_bs2mv_seg_last;
     Eigen::Matrix4d M_pos_bs2be_seg0, M_pos_bs2be_seg1, M_pos_bs2be_rest, M_pos_bs2be_seg_last2,
-    M_pos_bs2be_seg_last;
+        M_pos_bs2be_seg_last;
 
     Eigen::Matrix4d A_be, A_mv;
-
 };
 
 #endif
