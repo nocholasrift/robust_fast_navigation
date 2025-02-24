@@ -20,7 +20,6 @@
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
     </node>
 
-    <!-- <rosparam file="$(find cbf_tracking)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" /> -->
-    <rosparam file="$(find cbf_tracking)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
+    <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
     
 </launch>
