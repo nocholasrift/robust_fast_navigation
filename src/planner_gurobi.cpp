@@ -43,6 +43,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/barn_goal_dist", _barn_goal_dist, 10.);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/jps_hysteresis", _jps_hysteresis, false);
+    nh.param<std::string>("robust_planner/solver", _solver_str, "faster");
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
 
     nh.param("robust_planner/n_polys", _n_polys, 6);
@@ -57,6 +58,8 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/force_final_const", _force_final_const, true);
 
     // params
+    _planner_params.SOLVER = _solver_str;
+
     _planner_params.W_MAX               = _max_w;
     _planner_params.V_MAX               = _max_vel;
     _planner_params.A_MAX               = _max_acc;
@@ -448,8 +451,8 @@ void PlannerROS::visualizeTraj()
         }
         else
         {
-            ros::Time start           = ros::Time::now();
-            std::vector<state> states = _planner.get_arclen_traj();
+            ros::Time start                 = ros::Time::now();
+            std::vector<rfn_state_t> states = _planner.get_arclen_traj();
 
             if (states.size() == 0)
             {
@@ -634,13 +637,8 @@ bool PlannerROS::plan(bool is_failsafe)
         ROS_WARN("*******************************");
         ROS_WARN("*** FAILSAFE MODE  ENGAGED ****");
         ROS_WARN("*******************************");
-        // GRBModel m = _planner.get_solver().getModel();
-        // m.computeIIS();
-        // m.write("/home/nick/Desktop/model.ilp");
-        // exit(0);
     }
 
-    // ROS_INFO("Setting up initial and final conditions");
     Eigen::MatrixXd initialPVAJ(3, 4);
     Eigen::MatrixXd finalPVAJ(3, 4);
 
@@ -830,7 +828,7 @@ bool PlannerROS::plan(bool is_failsafe)
     ******** STITCH  TRAJECTORIES ********
     **************************************/
 
-    std::vector<state> planned_trajectory = _planner.get_trajectory();
+    std::vector<rfn_state_t> planned_trajectory = _planner.get_trajectory();
 
     if (_use_arclen)
     {
@@ -843,14 +841,16 @@ bool PlannerROS::plan(bool is_failsafe)
         int startInd = std::min((int)(t1 / _mpc_dt), (int)mpcHorizon.points.size() - 1) + 1;
         int trajInd  = std::min((int)(t2 / _mpc_dt), (int)mpcHorizon.points.size() - 1);
 
+        ROS_INFO("iterating: %d\t%d", startInd, trajInd);
+        ROS_INFO("horizon points: %lu", mpcHorizon.points.size());
         trajectory_msgs::JointTrajectory mpc_segment;
         for (int i = startInd; i < trajInd; ++i)
         {
             mpc_segment.points.push_back(mpcHorizon.points[i]);
         }
 
-        std::vector<double> ss, xs, ys;
-        bool reparam_status = reparam_traj(ss, xs, ys, mpc_segment);
+        // std::vector<double> ss, xs, ys;
+        // bool reparam_status = reparam_traj(ss, xs, ys, mpc_segment);
 
         double s_offset = 0;
         // if (reparam_status)
@@ -868,10 +868,9 @@ bool PlannerROS::plan(bool is_failsafe)
         //     }
         // }
 
-        std::vector<state> arclen_traj = _planner.get_arclen_traj();
-        ROS_INFO("sending trajectory with length %.2f", arclen_traj.back().t);
+        std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
 
-        for (state &x : arclen_traj)
+        for (rfn_state_t &x : arclen_traj)
         {
             // time from start is actually arc len in this case...
             trajectory_msgs::JointTrajectoryPoint p;

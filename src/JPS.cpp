@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -411,7 +410,7 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
   has been found or all grid cells have been examined. To start the
   JPS, add the start coordinate to the queue in all possible directions.
 ***********************************************************************/
-void JPSPlan::JPS()
+int JPSPlan::JPS()
 {
     closedSet.clear();
     parents.clear();
@@ -421,13 +420,13 @@ void JPSPlan::JPS()
     if (_map[startY * sizeX + startX] == occupied_val)
     {
         std::cerr << "start is in occupied space" << std::endl;
-        return;
+        return IN_OCCUPIED_SPACE;
     }
 
     if (_map[destY * sizeX + destX] == occupied_val)
     {
         std::cerr << "destination is in occupied space" << std::endl;
-        return;
+        return IN_OCCUPIED_SPACE;
     }
 
     // std::cout << "start " << (int) _map[startY*sizeX + startX] << " and
@@ -471,6 +470,8 @@ void JPSPlan::JPS()
             explore_diagonal(node);
         }
     }
+
+    return 0;
 }
 
 /**********************************************************************
@@ -658,12 +659,6 @@ bool JPSPlan::truncateJPS(const std::vector<Eigen::Vector2d> &path,
     for (size_t i = 1; i < path.size(); ++i)
     {
         double segmentLength = (path[i] - path[i - 1]).norm();
-
-        if (remainingDistance <= 0)
-        {
-            // Requested distance is longer than the entire path
-            return false;
-        }
 
         if (remainingDistance <= segmentLength)
         {

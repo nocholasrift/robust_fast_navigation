@@ -80,6 +80,7 @@ class PlannerROS
     bool _force_final_const;
 
     std::string _frame_str;
+    std::string _solver_str;
 
     trajectory_msgs::JointTrajectory sentTraj;
     trajectory_msgs::JointTrajectory mpcHorizon;

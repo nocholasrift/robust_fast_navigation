@@ -57,6 +57,8 @@ add_executable(planner
     src/solver.cpp 
     src/planner_core.cpp
     src/planner_gurobi.cpp 
+    src/faster_wrapper.cpp
+    src/gcopter_wrapper.cpp
     src/planner_gurobi_node.cpp 
 )
 target_link_libraries(planner

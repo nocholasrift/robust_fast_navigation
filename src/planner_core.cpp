@@ -1,6 +1,13 @@
 #include <robust_fast_navigation/JPS.h>
 #include <robust_fast_navigation/planner_core.h>
 
+#include <memory>
+
+#include "costmap_2d/cost_values.h"
+#include "robust_fast_navigation/faster_wrapper.h"
+#include "robust_fast_navigation/gcopter_wrapper.h"
+#include "robust_fast_navigation/solver_base.h"
+
 Planner::Planner()
 {
     _is_map_set   = false;
@@ -8,6 +15,8 @@ Planner::Planner()
     _simplify_jps = false;
     _is_start_set = false;
     _plan_in_free = false;
+
+    _solver = std::make_unique<FasterWrapper>();
 }
 
 Planner::~Planner() {}
@@ -15,6 +24,18 @@ Planner::~Planner() {}
 void Planner::set_params(const planner_params_t &params)
 {
     _params = params;
+
+    if (_params.SOLVER == "faster")
+        _solver = std::make_unique<FasterWrapper>();
+    else if (_params.SOLVER == "gcopter")
+        _solver = std::make_unique<GcopterWrapper>();
+    else
+    {
+        std::cout << termcolor::red << "[Planner Core] Solver param value '" << _params.SOLVER
+                  << "' not recognized! Set to either 'faster' or 'gcopter'" << termcolor::reset
+                  << std::endl;
+        exit(-1);
+    }
 
     _plan_in_free = params.PLAN_IN_FREE;
     _simplify_jps = params.SIMPLIFY_JPS;
@@ -30,29 +51,7 @@ void Planner::set_params(const planner_params_t &params)
     double factor_final     = params.DT_FACTOR_FINAL;
     double factor_increment = params.DT_FACTOR_INCREMENT;
 
-    std::cout << "Loaded params: " << std::endl;
-    std::cout << "PLAN_IN_FREE: " << _plan_in_free << std::endl;
-    std::cout << "SIMPLIFY_JPS: " << _simplify_jps << std::endl;
-    std::cout << "W_MAX: " << w_max << std::endl;
-    std::cout << "V_MAX: " << v_max << std::endl;
-    std::cout << "A_MAX: " << a_max << std::endl;
-    std::cout << "J_MAX: " << j_max << std::endl;
-    std::cout << "DT_FACTOR_INIT: " << factor_init << std::endl;
-    std::cout << "DT_FACTOR_FINAL: " << factor_final << std::endl;
-    std::cout << "DT_FACTOR_INCREMENT: " << factor_increment << std::endl;
-    std::cout << "MAX_SOLVE_TIME: " << params.MAX_SOLVE_TIME << std::endl;
-
-    _solver.setN(params.N_SEGMENTS);
-    _solver.createVars();
-    _solver.setDC(params.SOLVER_TRAJ_DT);
-    _solver.setBounds(limits);
-    _solver.setWMax(params.W_MAX);
-    _solver.setForceFinalConstraint(params.FORCE_FINAL_CONSTRAINT);
-    _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final, factor_increment);
-    _solver.setThreads(params.N_THREADS);
-    _solver.setVerbose(params.VERBOSE);
-    _solver.setUseMinvo(params.USE_MINVO);
-    _solver.setMaxSolverTime(params.MAX_SOLVE_TIME);
+    _solver->set_params(params);
 }
 
 void Planner::set_start(const Eigen::MatrixXd &start)
@@ -73,14 +72,12 @@ void Planner::set_costmap(const map_util::occupancy_grid_t &map)
     _is_map_set = true;
 }
 
-const SolverGurobi &Planner::get_solver() { return _solver; }
-
 bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
                    std::vector<Eigen::MatrixX4d> &hPolys)
 {
     if (!_is_start_set || !_is_goal_set || !_is_map_set)
     {
-        std::cout << termcolor::red << "Planner: missing start, goal or costmap"
+        std::cout << termcolor::red << "[Planner Core] missing start, goal or costmap"
                   << termcolor::reset << std::endl;
         return false;
     }
@@ -114,7 +111,14 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     jps.set_map(_map.get_data(), _map.width, _map.height, _map.origin_x, _map.origin_y,
                 _map.resolution);
 
-    jps.JPS();
+    int jps_status = jps.JPS();
+
+    // try one more time without inflated obstacles...
+    if (jps_status == IN_OCCUPIED_SPACE)
+    {
+        jps.set_occ_value(costmap_2d::LETHAL_OBSTACLE);
+        jps_status = jps.JPS();
+    }
 
     std::vector<Eigen::Vector2d> oldJps = jpsPath;
 
@@ -122,7 +126,8 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
 
     if (jpsPath.size() < 2)
     {
-        std::cout << termcolor::red << "Planner: JPS failed" << termcolor::reset << std::endl;
+        std::cout << termcolor::red << "[Planner Core] JPS failed" << termcolor::reset
+                  << std::endl;
         return false;
     }
 
@@ -173,27 +178,31 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     **************************************/
 
     std::vector<Eigen::Vector2d> newJPSPath;
-    bool enforce_final_pos = false;
 
     if (_plan_in_free)
     {
         jpsPath = getJPSInFree(jpsPath);
     }
+
+    double jps_path_length = 0;
+    for (int i = 0; i < jpsPath.size() - 1; ++i)
+    {
+        jps_path_length += (jpsPath[i + 1] - jpsPath[i]).norm();
+    }
+
+    std::cout << "JPS path lenth is " << jps_path_length << " / " << horizon << std::endl;
     if (jps.truncateJPS(jpsPath, newJPSPath, horizon))
     {
         jpsPath = newJPSPath;
-
-        // enforce_final_pos = (_goal.col(0).head(2) - jpsPath.back()).norm() >
-        // 1e-1;
-
-        _goal << Eigen::Vector3d(jpsPath.back()[0], jpsPath.back()[1], 0),
-            Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
     }
+
+    _goal << Eigen::Vector3d(jpsPath.back()[0], jpsPath.back()[1], 0), Eigen::Vector3d::Zero(),
+        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
 
     if (jpsPath.size() == 0)
     {
-        std::cout << termcolor::red << "Planner: JPS modifications failed" << termcolor::reset
-                  << std::endl;
+        std::cout << termcolor::red << "[Planner Core] JPS modifications failed"
+                  << termcolor::reset << std::endl;
         return false;
     }
 
@@ -204,8 +213,8 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     hPolys.clear();
     if (!corridor::createCorridorJPS(jpsPath, _map, hPolys, _start, _goal))
     {
-        std::cout << termcolor::red << "Planner: Corridor creation failed" << termcolor::reset
-                  << std::endl;
+        std::cout << termcolor::red << "[Planner Core] Corridor creation failed"
+                  << termcolor::reset << std::endl;
         return false;
     }
 
@@ -232,48 +241,36 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     ******** GENERATE  TRAJECTORY ********
     **************************************/
 
-    state initialState;
-    state finalState;
-
-    initialState.setPos(_start(0, 0), _start(1, 0), _start(2, 0));
-    initialState.setVel(_start(0, 1), _start(1, 1), _start(2, 1));
-    initialState.setAccel(_start(0, 2), _start(1, 2), _start(2, 2));
-    initialState.setJerk(_start(0, 3), _start(1, 3), _start(2, 3));
-
-    finalState.setPos(_goal.col(0));
-    finalState.setVel(_goal.col(1));
-    finalState.setAccel(_goal.col(2));
-    finalState.setJerk(_goal.col(3));
-
-    // ROS_INFO("setting up");
-    _solver.setX0(initialState);
-    _solver.setXf(finalState);
-    // _solver.setForceFinalConstraint(enforce_final_pos);
-    _solver.setPolytopes(hPolys);
+    if (!_solver->setup(_start, _goal, hPolys))
+    {
+        std::cout << termcolor::red << "[Planner Core] Solver setup failed" << termcolor::reset
+                  << std::endl;
+        return false;
+    }
 
     // time trajectory generation
     ros::Time start_solve = ros::Time::now();
-    if (!_solver.genNewTraj())
+    if (!_solver->solve())
     {
-        std::cout << termcolor::red << "Planner: Generating trajectory failed"
+        std::cout << termcolor::red << "[Planner Core] Generating trajectory failed"
                   << termcolor::reset << std::endl;
         return false;
     }
     else
     {
-        std::cout << termcolor::green << "Planner: Solver found trajectory" << termcolor::reset
-                  << std::endl;
+        std::cout << termcolor::green << "[Planner Core] Solver found trajectory, time: "
+                  << (ros::Time::now() - start_solve).toSec() << termcolor::reset << std::endl;
     }
 
-    _solver.fillX();
+    std::vector<rfn_state_t> traj = _solver->get_trajectory();
 
     // ensure trajectory does not overlap lethal obstacles
-    for (int i = 0; i < _solver.X_temp_.size(); i++)
+    for (int i = 0; i < traj.size(); ++i)
     {
-        Eigen::Vector2d pos = _solver.X_temp_[i].pos.head(2);
+        Eigen::Vector2d pos = traj[i].pos.head(2);
         if (_map.is_occupied(pos[0], pos[1]))
         {
-            std::cout << termcolor::red << "Planner: Trajectory overlaps obstacle"
+            std::cout << termcolor::red << "[Planner Core] Trajectory overlaps obstacle"
                       << termcolor::reset << std::endl;
             return false;
         }
@@ -288,9 +285,9 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     return true;
 }
 
-std::vector<state> Planner::get_trajectory() { return _solver.X_temp_; }
+std::vector<rfn_state_t> Planner::get_trajectory() { return _solver->get_trajectory(); }
 
-std::vector<state> Planner::get_arclen_traj()
+std::vector<rfn_state_t> Planner::get_arclen_traj()
 {
     std::vector<double> ss;
     std::vector<double> xs;
@@ -300,17 +297,15 @@ std::vector<state> Planner::get_arclen_traj()
 
     if (!status) return {};
 
-    std::vector<state> ret;
-    ret.resize(ss.size());
+    std::vector<rfn_state_t> ret;
+    ret.reserve(ss.size());
 
-    for (int i = 0; i < ret.size(); ++i)
+    for (int i = 0; i < ss.size(); ++i)
     {
-        state x;
-        x.pos(0) = xs[i];
-        x.pos(1) = ys[i];
-        x.t      = ss[i];
-
-        ret[i] = x;
+        rfn_state_t &x = ret.emplace_back();
+        x.pos(0)       = xs[i];
+        x.pos(1)       = ys[i];
+        x.t            = ss[i];
     }
 
     return ret;
@@ -319,23 +314,23 @@ std::vector<state> Planner::get_arclen_traj()
 std::vector<Eigen::Vector3d> Planner::get_cps()
 {
     std::vector<Eigen::Vector3d> ret;
-    for (int interval = 0; interval < _solver.N_; interval++)
-    {
-        std::vector<GRBLinExpr> cp0 = _solver.getCP0(interval);
-        std::vector<GRBLinExpr> cp1 = _solver.getCP1(interval);
-        std::vector<GRBLinExpr> cp2 = _solver.getCP2(interval);
-        std::vector<GRBLinExpr> cp3 = _solver.getCP3(interval);
+    // for (int interval = 0; interval < _solver.N_; interval++)
+    // {
+    //     std::vector<GRBLinExpr> cp0 = _solver.getCP0(interval);
+    //     std::vector<GRBLinExpr> cp1 = _solver.getCP1(interval);
+    //     std::vector<GRBLinExpr> cp2 = _solver.getCP2(interval);
+    //     std::vector<GRBLinExpr> cp3 = _solver.getCP3(interval);
 
-        Eigen::Vector3d cp0_vec(cp0[0].getValue(), cp0[1].getValue(), cp0[2].getValue());
-        Eigen::Vector3d cp1_vec(cp1[0].getValue(), cp1[1].getValue(), cp1[2].getValue());
-        Eigen::Vector3d cp2_vec(cp2[0].getValue(), cp2[1].getValue(), cp2[2].getValue());
-        Eigen::Vector3d cp3_vec(cp3[0].getValue(), cp3[1].getValue(), cp3[2].getValue());
+    //     Eigen::Vector3d cp0_vec(cp0[0].getValue(), cp0[1].getValue(), cp0[2].getValue());
+    //     Eigen::Vector3d cp1_vec(cp1[0].getValue(), cp1[1].getValue(), cp1[2].getValue());
+    //     Eigen::Vector3d cp2_vec(cp2[0].getValue(), cp2[1].getValue(), cp2[2].getValue());
+    //     Eigen::Vector3d cp3_vec(cp3[0].getValue(), cp3[1].getValue(), cp3[2].getValue());
 
-        ret.push_back(cp0_vec);
-        ret.push_back(cp1_vec);
-        ret.push_back(cp2_vec);
-        ret.push_back(cp3_vec);
-    }
+    //     ret.push_back(cp0_vec);
+    //     ret.push_back(cp1_vec);
+    //     ret.push_back(cp2_vec);
+    //     ret.push_back(cp3_vec);
+    // }
 
     return ret;
 }
@@ -434,21 +429,12 @@ std::vector<Eigen::Vector2d> Planner::getJPSInFree(const std::vector<Eigen::Vect
 bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
                            std::vector<double> &ys)
 {
-    if (_solver.X_temp_.size() == 0) return false;
+    std::vector<rfn_state_t> traj = _solver->get_trajectory();
+    if (traj.size() == 0) return false;
 
-    // get arc length for each segment
-    int N     = _solver.N_;
-    double dt = _solver.dt_;
+    double traj_duration = traj.back().t;
 
-    double cumsum[N];
-    cumsum[0] = compute_arclen(0, 0, dt);
-
-    for (int i = 1; i < N; ++i)
-    {
-        cumsum[i] = cumsum[i - 1] + compute_arclen(i, 0, dt);
-    }
-
-    double total_length = cumsum[N - 1];
+    double total_length = compute_arclen(0, traj_duration);
 
     double M  = 20;
     double ds = total_length / M;
@@ -461,51 +447,85 @@ bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
     {
         double s = i * ds;
 
-        int min_idx = -1;
-        for (int j = 0; j < N; ++j)
-        {
-            if (cumsum[j] - s >= -1e-3)
-            {
-                min_idx = j;
-                break;
-            }
-        }
-
-        // realistically this shouldn't happen with the 1e-3 tolerance but just
-        // in case...
-        if (min_idx == -1)
-        {
-            std::cerr << "reparameterization of trajectory has failed" << std::endl;
-            return false;
-        }
-
-        double l_before = 0;
-        if (min_idx > 0)
-        {
-            l_before = cumsum[min_idx - 1];
-        }
-
-        double ti = binary_search(min_idx, s - l_before, 0, dt, 1e-3);
+        double ti = binary_search(s, 0, traj_duration, 1e-3);
 
         ss[i] = s;
-        try
-        {
-            xs[i] = _solver.getPos(min_idx, ti, 0).getValue();
-            ys[i] = _solver.getPos(min_idx, ti, 1).getValue();
-        }
-        catch (const GRBException &e)
-        {
-            std::cerr << "in reparam traj " << e.getMessage() << '\n';
-            std::cerr << "segment " << min_idx << std::endl;
-            exit(1);
-        }
+        xs[i] = _solver->get_pos(ti, 0);
+        ys[i] = _solver->get_pos(ti, 1);
     }
 
     return true;
 }
 
-double Planner::binary_search(int segment, double dl, double start, double end,
-                              double tolerance)
+// bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
+//                            std::vector<double> &ys)
+// {
+//     std::vector<rfn_state_t> traj = _solver->get_trajectory();
+//     if (traj.size() == 0) return false;
+//
+//     // get arc length for each segment
+//     int N     = _params.N_SEGMENTS;
+//     double dt = _solver->get_params().DT;
+//
+//     std::cout << "DT IS " << dt << std::endl;
+//
+//     std::vector<double> cumsum;
+//     cumsum.resize(N);
+//     cumsum[0] = compute_arclen(0, 0, dt);
+//
+//     for (int i = 1; i < N; ++i)
+//     {
+//         cumsum[i] = cumsum[i - 1] + compute_arclen(i, 0, dt);
+//     }
+//
+//     double total_length = cumsum[N - 1];
+//
+//     double M  = 20;
+//     double ds = total_length / M;
+//
+//     ss.resize(M + 1);
+//     xs.resize(M + 1);
+//     ys.resize(M + 1);
+//
+//     for (int i = 0; i <= M; ++i)
+//     {
+//         double s = i * ds;
+//
+//         int min_idx = -1;
+//         for (int j = 0; j < N; ++j)
+//         {
+//             if (cumsum[j] - s >= -1e-3)
+//             {
+//                 min_idx = j;
+//                 break;
+//             }
+//         }
+//
+//         // realistically this shouldn't happen with the 1e-3 tolerance but just
+//         // in case...
+//         if (min_idx == -1)
+//         {
+//             std::cerr << "reparameterization of trajectory has failed" << std::endl;
+//             return false;
+//         }
+//
+//         double l_before = 0;
+//         if (min_idx > 0)
+//         {
+//             l_before = cumsum[min_idx - 1];
+//         }
+//
+//         double ti = binary_search(min_idx, s - l_before, 0, dt, 1e-3);
+//
+//         ss[i] = s;
+//         xs[i] = _solver->get_pos(min_idx, ti, 0);
+//         ys[i] = _solver->get_pos(min_idx, ti, 1);
+//     }
+//
+//     return true;
+// }
+
+double Planner::binary_search(double dl, double start, double end, double tolerance)
 {
     double t_left  = start;
     double t_right = end;
@@ -518,7 +538,7 @@ double Planner::binary_search(int segment, double dl, double start, double end,
         prev_s = s;
 
         double t_mid = (t_left + t_right) / 2;
-        s            = compute_arclen(segment, start, t_mid);
+        s            = compute_arclen(start, t_mid);
 
         if (s < dl)
             t_left = t_mid;
@@ -529,26 +549,18 @@ double Planner::binary_search(int segment, double dl, double start, double end,
     return (t_left + t_right) / 2;
 }
 
-double Planner::compute_arclen(int segment, double t0, double tf)
+double Planner::compute_arclen(double t0, double tf)
 {
     double s  = 0.0;
     double dt = (tf - t0) / 10.;
     for (double t = t0; t <= tf; t += dt)
     {
         double dx, dy;
-        try
-        {
-            dx = _solver.getVel(segment, t, 0).getValue();
-            dy = _solver.getVel(segment, t, 1).getValue();
-        }
-        catch (const GRBException &e)
-        {
-            std::cerr << "in compute_arclen" << e.getMessage() << '\n';
-            std::cerr << "segment " << segment << std::endl;
-            exit(1);
-        }
+        dx = _solver->get_vel(t, 0);
+        dy = _solver->get_vel(t, 1);
 
         s += std::sqrt(dx * dx + dy * dy) * dt;
     }
+
     return s;
 }

@@ -13,6 +13,10 @@
 #include <faster/solver.hpp>
 #include <faster/solver_utils.hpp>
 
+using namespace GiNaC;
+using namespace termcolor;
+using namespace faster;
+
 void SolverGurobi::StopExecution()
 {
     cb_.should_terminate_ = true;
@@ -122,8 +126,8 @@ void SolverGurobi::fillX()
 {
     double t     = 0;
     int interval = 0;
-    //#pragma omp parallel for
-    //  {
+    // #pragma omp parallel for
+    //   {
 
     for (int i = 0; i < X_temp_.size(); i++)
     {

@@ -1,4 +1,9 @@
 # Planner logic params
+
+# can be either gcopter or faster
+#solver: "gcopter"
+solver: "faster"
+
 planner_frequency: .3
 lookahead: .35
 max_deviation: 10
@@ -7,7 +12,7 @@ jps_hysteresis: false
 traj_dt: .05
 failsafe_count: 4
 plan_in_free: true
-max_dist_horizon: 5
+max_dist_horizon: 4.5
 frame: "map"
 teleop: false
 max_solve_time: .25
@@ -39,3 +44,4 @@ verbose: 0
 
 # For debug
 plan_once: false
+

@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#define IN_OCCUPIED_SPACE 1
+
 namespace jps
 {
 struct JPSNode
@@ -39,7 +41,7 @@ class JPSPlan
     void set_destination(int x, int y);
     void set_map(unsigned char *map, int sizeX, int sizeY, double originX, double originY,
                  double resolution);
-    void JPS();
+    int JPS();
 
     std::vector<Eigen::Vector2d> getPath(bool simplify = true);
     std::vector<Eigen::Vector2d> simplifyPath(const std::vector<Eigen::Vector2d> &path);

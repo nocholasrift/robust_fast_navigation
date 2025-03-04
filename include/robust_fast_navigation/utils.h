@@ -4,6 +4,7 @@
 #include <geometry_msgs/PoseArray.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <robust_fast_navigation/JPS.h>
+#include <robust_fast_navigation/rfn_types.h>
 #include <std_msgs/ColorRGBA.h>
 #include <trajectory_msgs/JointTrajectory.h>
 #include <visualization_msgs/Marker.h>
@@ -12,7 +13,6 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
-#include <faster/faster_types.hpp>
 #include <gcopter/geo_utils.hpp>
 #include <iostream>
 #include <robust_fast_navigation/tinycolormap.hpp>
@@ -338,9 +338,8 @@ inline Eigen::MatrixX2d getVertices(const Eigen::MatrixX4d &poly)
     - frame_str: the frame_id of the trajectory msg
 
 ***********************************************************************/
-inline trajectory_msgs::JointTrajectory convertTrajToMsg(const std::vector<state> &trajectory,
-                                                         double traj_dt,
-                                                         std::string_view frame_str)
+inline trajectory_msgs::JointTrajectory convertTrajToMsg(
+    const std::vector<rfn_state_t> &trajectory, double traj_dt, std::string_view frame_str)
 {
     trajectory_msgs::JointTrajectory msg;
     msg.header.stamp    = ros::Time::now();
@@ -349,7 +348,7 @@ inline trajectory_msgs::JointTrajectory convertTrajToMsg(const std::vector<state
     double next_t = 0.;
     for (int i = 0; i < trajectory.size(); i++)
     {
-        state x = trajectory[i];
+        rfn_state_t x = trajectory[i];
         if (x.t >= next_t)
         {
             trajectory_msgs::JointTrajectoryPoint p;
