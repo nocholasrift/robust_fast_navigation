@@ -82,42 +82,27 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     _planner.set_params(_planner_params);
 
     // Publishers
-    trajVizPub = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
-    wptVizPub  = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
-    trajPub    = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
+    trajVizPub     = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
+    wptVizPub      = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
+    trajPub        = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
+    edgePub        = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
+    helperMeshPub  = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_helper", 1000);
+    helperEdgePub  = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_helper", 1000);
+    initPointPub   = nh.advertise<geometry_msgs::PointStamped>("/initPoint", 0);
+    goalPub        = nh.advertise<geometry_msgs::PoseStamped>("/global_planner/goal", 0);
+    paddedLaserPub = nh.advertise<visualization_msgs::Marker>("/paddedObs", 0);
+    jpsPub         = nh.advertise<nav_msgs::Path>("/jpsPath", 0);
+    jpsPubFree     = nh.advertise<nav_msgs::Path>("/jpsPathFree", 0);
+    jpsPointsPub   = nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
+    corridorPub    = nh.advertise<geometry_msgs::PoseArray>("/polyCorridor", 0);
+    intGoalPub     = nh.advertise<geometry_msgs::PoseArray>("/intermediate_goal", 0);
+    cmdVelPub      = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 0);
+    initialPVAJPub = nh.advertise<trajectory_msgs::JointTrajectoryPoint>("/initial_pvaj", 0);
+    ctrlPointPub   = nh.advertise<geometry_msgs::PoseArray>("/ctrl_points", 0);
+    tubeVizPub     = nh.advertise<visualization_msgs::MarkerArray>("/tubeVizPub", 0);
+    unionCorridorPub = nh.advertise<visualization_msgs::Marker>("/unionCorridor", 0);
     trajPubNoReset =
         nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory_no_reset", 0);
-
-    meshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
-    edgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
-
-    helperMeshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_helper", 1000);
-    helperEdgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_helper", 1000);
-
-    initPointPub = nh.advertise<geometry_msgs::PointStamped>("/initPoint", 0);
-
-    goalPub = nh.advertise<geometry_msgs::PoseStamped>("/global_planner/goal", 0);
-
-    paddedLaserPub = nh.advertise<visualization_msgs::Marker>("/paddedObs", 0);
-
-    jpsPub     = nh.advertise<nav_msgs::Path>("/jpsPath", 0);
-    jpsPubFree = nh.advertise<nav_msgs::Path>("/jpsPathFree", 0);
-
-    jpsPointsPub = nh.advertise<visualization_msgs::Marker>("/jpsPoints", 0);
-
-    corridorPub = nh.advertise<geometry_msgs::PoseArray>("/polyCorridor", 0);
-
-    intGoalPub = nh.advertise<geometry_msgs::PoseArray>("/intermediate_goal", 0);
-
-    cmdVelPub = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 0);
-
-    initialPVAJPub = nh.advertise<trajectory_msgs::JointTrajectoryPoint>("/initial_pvaj", 0);
-
-    ctrlPointPub = nh.advertise<geometry_msgs::PoseArray>("/ctrl_points", 0);
-
-    unionCorridorPub = nh.advertise<visualization_msgs::Marker>("/unionCorridor", 0);
-
-    tubeVizPub = nh.advertise<visualization_msgs::MarkerArray>("/tubeVizPub", 0);
 
     // Services
     estop_client = nh.serviceClient<std_srvs::Empty>("/switch_mode");
