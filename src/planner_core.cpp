@@ -443,87 +443,24 @@ bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
     xs.resize(M + 1);
     ys.resize(M + 1);
 
+    double previous_ti = 0;
     for (int i = 0; i <= M; ++i)
     {
         double s = i * ds;
 
-        double ti = binary_search(s, 0, traj_duration, 1e-3);
+        double ti = binary_search(s, previous_ti, traj_duration, 1e-3);
+
+        // std::cout << "s is " << s << " and ti is " << ti << std::endl;
 
         ss[i] = s;
         xs[i] = _solver->get_pos(ti, 0);
         ys[i] = _solver->get_pos(ti, 1);
+
+        previous_ti = ti;
     }
 
     return true;
 }
-
-// bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
-//                            std::vector<double> &ys)
-// {
-//     std::vector<rfn_state_t> traj = _solver->get_trajectory();
-//     if (traj.size() == 0) return false;
-//
-//     // get arc length for each segment
-//     int N     = _params.N_SEGMENTS;
-//     double dt = _solver->get_params().DT;
-//
-//     std::cout << "DT IS " << dt << std::endl;
-//
-//     std::vector<double> cumsum;
-//     cumsum.resize(N);
-//     cumsum[0] = compute_arclen(0, 0, dt);
-//
-//     for (int i = 1; i < N; ++i)
-//     {
-//         cumsum[i] = cumsum[i - 1] + compute_arclen(i, 0, dt);
-//     }
-//
-//     double total_length = cumsum[N - 1];
-//
-//     double M  = 20;
-//     double ds = total_length / M;
-//
-//     ss.resize(M + 1);
-//     xs.resize(M + 1);
-//     ys.resize(M + 1);
-//
-//     for (int i = 0; i <= M; ++i)
-//     {
-//         double s = i * ds;
-//
-//         int min_idx = -1;
-//         for (int j = 0; j < N; ++j)
-//         {
-//             if (cumsum[j] - s >= -1e-3)
-//             {
-//                 min_idx = j;
-//                 break;
-//             }
-//         }
-//
-//         // realistically this shouldn't happen with the 1e-3 tolerance but just
-//         // in case...
-//         if (min_idx == -1)
-//         {
-//             std::cerr << "reparameterization of trajectory has failed" << std::endl;
-//             return false;
-//         }
-//
-//         double l_before = 0;
-//         if (min_idx > 0)
-//         {
-//             l_before = cumsum[min_idx - 1];
-//         }
-//
-//         double ti = binary_search(min_idx, s - l_before, 0, dt, 1e-3);
-//
-//         ss[i] = s;
-//         xs[i] = _solver->get_pos(min_idx, ti, 0);
-//         ys[i] = _solver->get_pos(min_idx, ti, 1);
-//     }
-//
-//     return true;
-// }
 
 double Planner::binary_search(double dl, double start, double end, double tolerance)
 {
@@ -538,7 +475,11 @@ double Planner::binary_search(double dl, double start, double end, double tolera
         prev_s = s;
 
         double t_mid = (t_left + t_right) / 2;
-        s            = compute_arclen(start, t_mid);
+
+        // always interested in total arc length up to t_mid
+        s = compute_arclen(0, t_mid);
+
+        // std::cout << "\ts at " << t_mid << " is " << s << std::endl;
 
         if (s < dl)
             t_left = t_mid;
@@ -552,14 +493,24 @@ double Planner::binary_search(double dl, double start, double end, double tolera
 double Planner::compute_arclen(double t0, double tf)
 {
     double s  = 0.0;
-    double dt = (tf - t0) / 10.;
-    for (double t = t0; t <= tf; t += dt)
+    double dt = (tf - t0) / 100.;
+
+    double prev_dx = _solver->get_vel(t0, 0);
+    double prev_dy = _solver->get_vel(t0, 1);
+
+    for (double t = t0; t < tf; t += dt)
     {
         double dx, dy;
         dx = _solver->get_vel(t, 0);
         dy = _solver->get_vel(t, 1);
 
-        s += std::sqrt(dx * dx + dy * dy) * dt;
+        // s += std::sqrt(dx * dx + dy * dy) * dt;
+        s += .5 *
+             (std::sqrt(dx * dx + dy * dy) + std::sqrt(prev_dx * prev_dx + prev_dy * prev_dy)) *
+             dt;
+
+        prev_dx = dx;
+        prev_dy = dy;
     }
 
     return s;

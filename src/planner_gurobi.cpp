@@ -85,6 +85,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     trajVizPub     = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
     wptVizPub      = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
     trajPub        = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
+    meshPub        = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
     edgePub        = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
     helperMeshPub  = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_helper", 1000);
     helperEdgePub  = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_helper", 1000);
@@ -99,7 +100,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     cmdVelPub      = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 0);
     initialPVAJPub = nh.advertise<trajectory_msgs::JointTrajectoryPoint>("/initial_pvaj", 0);
     ctrlPointPub   = nh.advertise<geometry_msgs::PoseArray>("/ctrl_points", 0);
-    tubeVizPub     = nh.advertise<visualization_msgs::MarkerArray>("/tubeVizPub", 0);
+    tubeVizPub     = nh.advertise<visualization_msgs::Marker>("/sample_points", 0);
     unionCorridorPub = nh.advertise<visualization_msgs::Marker>("/unionCorridor", 0);
     trajPubNoReset =
         nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory_no_reset", 0);
@@ -450,20 +451,37 @@ void PlannerROS::visualizeTraj()
             xs.resize(states.size());
             ys.resize(states.size());
 
+            visualization_msgs::Marker sample_msg;
+            sample_msg.header.frame_id    = _frame_str;
+            sample_msg.header.stamp       = ros::Time::now();
+            sample_msg.ns                 = "sampemsg";
+            sample_msg.id                 = 870;
+            sample_msg.action             = visualization_msgs::Marker::ADD;
+            sample_msg.type               = visualization_msgs::Marker::POINTS;
+            sample_msg.scale.x            = .05;
+            sample_msg.scale.y            = .05;
+            sample_msg.pose.orientation.w = 1;
+            sample_msg.color.r            = 1;
+            sample_msg.color.a            = 1;
+
             for (int i = 0; i < states.size(); ++i)
             {
                 xs[i] = states[i].pos(0);
                 ys[i] = states[i].pos(1);
                 ss[i] = states[i].t;
+
+                geometry_msgs::Point point_msg;
+                point_msg.x = xs[i];
+                point_msg.y = ys[i];
+                point_msg.z = 0.2;
+
+                sample_msg.points.push_back(point_msg);
             }
 
             // std::vector<spline_t> d0 = _planner.get_tube();
 
             tk::spline splineX(ss, xs, tk::spline::cspline);
             tk::spline splineY(ss, ys, tk::spline::cspline);
-
-            // tk::spline splineD = d0[0].spline;
-            // tk::spline splineD1 = d0[1].spline;
 
             visualization_msgs::Marker arclenmsg;
             arclenmsg.header.frame_id    = _frame_str;
@@ -474,15 +492,6 @@ void PlannerROS::visualizeTraj()
             arclenmsg.type               = visualization_msgs::Marker::LINE_STRIP;
             arclenmsg.scale.x            = .1;
             arclenmsg.pose.orientation.w = 1;
-
-            // visualization_msgs::Marker tubemsg = arclenmsg;
-            // tubemsg.ns = "tube";
-            // tubemsg.id = 87;
-            // tubemsg.scale.x = .05;
-
-            // visualization_msgs::Marker tubemsg1 = tubemsg;
-            // tubemsg.ns = "tube1";
-            // tubemsg.id = 88;
 
             for (double s = 0; s < ss.back(); s += .1)
             {
@@ -505,39 +514,9 @@ void PlannerROS::visualizeTraj()
                 point_msg.y = py;
                 point_msg.z = 0.0;
                 arclenmsg.points.push_back(point_msg);
-
-                // Eigen::Vector2d point(px, py);
-                // Eigen::Vector2d normal(-ty, tx);
-                // normal = normal / normal.norm();
-
-                // double d = splineD(s);
-                // double d1 = splineD1(s);
-
-                // std::cout << "d is " << d << std::endl;
-                // std::cout << (point + normal*d).transpose() << std::endl;
-
-                // geometry_msgs::Point tube_pt;
-                // tube_pt.x = point(0) + normal(0) * d;
-                // tube_pt.y = point(1) + normal(1) * d;
-                // tube_pt.z = 1.0;
-                // tubemsg.points.push_back(tube_pt);
-
-                // geometry_msgs::Point tube_pt1;
-                // tube_pt1.x = point(0) - normal(0) * d1;
-                // tube_pt1.y = point(1) - normal(1) * d1;
-                // tube_pt1.z = 1.0;
-                // tubemsg1.points.push_back(tube_pt1);
-
-                // color_msg.b = 1.0;
-                // tubemsg.colors.push_back(color_msg);
-                // tubemsg1.colors.push_back(color_msg);
             }
 
-            // visualization_msgs::MarkerArray ma;
-            // ma.markers.push_back(tubemsg);
-            // ma.markers.push_back(tubemsg1);
-
-            // tubeVizPub.publish(ma);
+            tubeVizPub.publish(sample_msg);
             trajVizPub.publish(arclenmsg);
         }
     }
@@ -643,10 +622,8 @@ bool PlannerROS::plan(bool is_failsafe)
              !_use_arclen)  // use trajectory for init point if no horizon
     {
         double t = (a - start).toSec() + _lookahead;
-        ROS_INFO("using sentTraj for initial point t: %.4f", t);
 
         int trajInd = std::min((int)(t / _traj_dt), (int)sentTraj.points.size() - 1);
-        ROS_INFO("got traj index %d", trajInd);
 
         trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
 
@@ -672,7 +649,6 @@ bool PlannerROS::plan(bool is_failsafe)
 
         // jerk (stored in effort)
         initialPVAJ.col(3) = Eigen::Vector3d(p.effort[0], p.effort[1], p.effort[2]);
-        ROS_INFO("done finding initial point");
     }
     else if (mpcHorizon.points.size() > 0)
     {
@@ -733,6 +709,9 @@ bool PlannerROS::plan(bool is_failsafe)
     _planner.set_costmap(occ_grid);
 
     std::vector<Eigen::Vector2d> jpsPath;
+
+    ROS_INFO_STREAM("GOAL IS " << finalPVAJ.col(0).transpose());
+    ROS_INFO("horizon is %.2f", _curr_horizon);
 
     if (_jps_hysteresis && !is_failsafe)
     {
