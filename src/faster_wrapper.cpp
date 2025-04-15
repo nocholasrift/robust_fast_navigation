@@ -73,10 +73,37 @@ bool FasterWrapper::solve()
 {
     bool success = _solver.genNewTraj();
 
-    if (success) _solver.fillX();
+    if (success)
+    {
+        _solver.fillX();
 
-    // populate DT param field since it changes per solve
-    _params.DT = _solver.dt_;
+        // populate DT param field since it changes per solve
+        _params.DT = _solver.dt_;
+
+        _traj._segments.clear();
+        _traj._segments.reserve(_solver.N_);
+
+        for (int segment = 0; segment < _solver.N_; ++segment)
+        {
+            Segment& piece = _traj._segments.emplace_back();
+            piece._x[0]    = Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
+                                             _solver.x[segment][1].get(GRB_DoubleAttr_X),
+                                             _solver.x[segment][2].get(GRB_DoubleAttr_X));
+
+            piece._x[1] = Eigen::Vector3d(_solver.x[segment][3].get(GRB_DoubleAttr_X),
+                                          _solver.x[segment][4].get(GRB_DoubleAttr_X),
+                                          _solver.x[segment][5].get(GRB_DoubleAttr_X));
+
+            piece._x[2] = Eigen::Vector3d(_solver.x[segment][6].get(GRB_DoubleAttr_X),
+                                          _solver.x[segment][7].get(GRB_DoubleAttr_X),
+                                          _solver.x[segment][8].get(GRB_DoubleAttr_X));
+
+            piece._x[3]     = Eigen::Vector3d(_solver.x[segment][9].get(GRB_DoubleAttr_X),
+                                              _solver.x[segment][10].get(GRB_DoubleAttr_X),
+                                              _solver.x[segment][11].get(GRB_DoubleAttr_X));
+            piece._duration = _solver.dt_;
+        }
+    }
 
     return success;
 }
@@ -100,42 +127,45 @@ std::vector<rfn_state_t> FasterWrapper::get_trajectory()
 
 double FasterWrapper::get_pos(double t, int dim)
 {
-    double ret;
-
-    // find segment
-    double dt   = _solver.dt_;
-    int segment = std::min(t / dt, _solver.N_ - 1.);
-
-    try
-    {
-        ret = _solver.getPos(segment, t - segment * dt, dim).getValue();
-    }
-    catch (const GRBException& e)
-    {
-        std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';
-        std::cerr << "segment " << segment << std::endl;
-        exit(1);
-    }
-    return ret;
+    /*double ret;*/
+    /**/
+    /*// find segment*/
+    /*double dt   = _solver.dt_;*/
+    /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
+    /**/
+    /*try*/
+    /*{*/
+    /*    ret = _solver.getPos(segment, t - segment * dt, dim).getValue();*/
+    /*}*/
+    /*catch (const GRBException& e)*/
+    /*{*/
+    /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
+    /*    std::cerr << "segment " << segment << std::endl;*/
+    /*    exit(1);*/
+    /*}*/
+    /*return ret;*/
+    return _traj.getPos(t)[dim];
 }
 
 double FasterWrapper::get_vel(double t, int dim)
 {
-    double ret;
+    /*double ret;*/
+    /**/
+    /*// find segment*/
+    /*double dt   = _solver.dt_;*/
+    /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
+    /**/
+    /*try*/
+    /*{*/
+    /*    ret = _solver.getVel(segment, t - segment * dt, dim).getValue();*/
+    /*}*/
+    /*catch (const GRBException& e)*/
+    /*{*/
+    /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
+    /*    std::cerr << "segment " << segment << std::endl;*/
+    /*    exit(1);*/
+    /*}*/
+    /*return ret;*/
 
-    // find segment
-    double dt   = _solver.dt_;
-    int segment = std::min(t / dt, _solver.N_ - 1.);
-
-    try
-    {
-        ret = _solver.getVel(segment, t - segment * dt, dim).getValue();
-    }
-    catch (const GRBException& e)
-    {
-        std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';
-        std::cerr << "segment " << segment << std::endl;
-        exit(1);
-    }
-    return ret;
+    return _traj.getVel(t)[dim];
 }

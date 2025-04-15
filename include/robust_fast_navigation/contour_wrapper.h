@@ -1,14 +1,13 @@
 #pragma once
 
+#include <robust_fast_navigation/contour_solver.h>
 #include <robust_fast_navigation/solver_base.h>
 
-#include <faster/solver.hpp>
-
-class FasterWrapper : public SolverBase
+class ContourWrapper : public SolverBase
 {
    public:
-    FasterWrapper();
-    ~FasterWrapper();
+    ContourWrapper();
+    ~ContourWrapper();
     bool setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& end,
                const std::vector<Eigen::MatrixX4d>& polys) override;
     bool solve() override;
@@ -19,6 +18,5 @@ class FasterWrapper : public SolverBase
     void set_params(const planner_params_t& params) override;
 
    protected:
-    faster::SolverGurobi _solver;
-    RFNTrajectory _traj;
+    contour_solver::ContourSolver _solver;
 };

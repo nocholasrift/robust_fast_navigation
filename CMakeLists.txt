@@ -18,6 +18,11 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   visualization_msgs
+
+  grid_map_cv
+  grid_map_ros
+  grid_map_core
+  grid_map_costmap_2d
 )
 
 ## System dependencies are found with CMake's conventions
@@ -57,8 +62,10 @@ add_executable(planner
     src/solver.cpp 
     src/planner_core.cpp
     src/planner_gurobi.cpp 
+    src/contour_solver.cpp
     src/faster_wrapper.cpp
     src/gcopter_wrapper.cpp
+    src/contour_wrapper.cpp
     src/planner_gurobi_node.cpp 
 )
 target_link_libraries(planner

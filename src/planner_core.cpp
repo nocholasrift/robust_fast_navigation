@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "costmap_2d/cost_values.h"
+#include "robust_fast_navigation/contour_wrapper.h"
 #include "robust_fast_navigation/faster_wrapper.h"
 #include "robust_fast_navigation/gcopter_wrapper.h"
 #include "robust_fast_navigation/solver_base.h"
@@ -15,6 +16,8 @@ Planner::Planner()
     _simplify_jps = false;
     _is_start_set = false;
     _plan_in_free = false;
+
+    _traj = {};
 
     _solver = std::make_unique<FasterWrapper>();
 }
@@ -29,6 +32,8 @@ void Planner::set_params(const planner_params_t &params)
         _solver = std::make_unique<FasterWrapper>();
     else if (_params.SOLVER == "gcopter")
         _solver = std::make_unique<GcopterWrapper>();
+    else if (_params.SOLVER == "contour")
+        _solver = std::make_unique<ContourWrapper>();
     else
     {
         std::cout << termcolor::red << "[Planner Core] Solver param value '" << _params.SOLVER
@@ -101,24 +106,33 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     eX                                   = goal_cells[0];
     eY                                   = goal_cells[1];
 
-    // std::cout << "eX = " << eX << std::endl;
-    // std::cout << "eY = " << eY << std::endl;
-
     jps.set_start(sX, sY);
     jps.set_destination(eX, eY);
     jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
 
-    jps.set_map(_map.get_data(), _map.width, _map.height, _map.origin_x, _map.origin_y,
-                _map.resolution);
+    double x          = _map.get_origin()[0];
+    double y          = _map.get_origin()[1];
+    double resolution = _map.get_resolution();
+    int w             = _map.get_size()[0];
+    int h             = _map.get_size()[1];
+
+    jps.set_map(_map.get_data("inflated"), w, h, x, y, resolution);
+    jps.set_util(_map, "inflated");
+
+    unsigned int test1, test2;
+    jps.worldToMap(_start(0, 0), _start(1, 0), test1, test2);
 
     int jps_status = jps.JPS();
 
     // try one more time without inflated obstacles...
-    if (jps_status == IN_OCCUPIED_SPACE)
-    {
-        jps.set_occ_value(costmap_2d::LETHAL_OBSTACLE);
-        jps_status = jps.JPS();
-    }
+    /*if (jps_status == IN_OCCUPIED_SPACE)*/
+    /*{*/
+    /*    std::cout << termcolor::red << "[Planner Core] JPS failed, trying again with "*/
+    /*              << "LETHAL_OBSTACLE" << termcolor::reset << std::endl;*/
+    /*    jps.set_occ_value(costmap_2d::LETHAL_OBSTACLE);*/
+    /*    jps.set_map(_map.get_data("obstacles"), w, h, x, y, resolution);*/
+    /*    jps_status = jps.JPS();*/
+    /*}*/
 
     std::vector<Eigen::Vector2d> oldJps = jpsPath;
 
@@ -262,13 +276,14 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
                   << (ros::Time::now() - start_solve).toSec() << termcolor::reset << std::endl;
     }
 
-    std::vector<rfn_state_t> traj = _solver->get_trajectory();
+    _traj = _solver->get_trajectory();
 
     // ensure trajectory does not overlap lethal obstacles
-    for (int i = 0; i < traj.size(); ++i)
+    for (int i = 0; i < _traj.size(); ++i)
     {
-        Eigen::Vector2d pos = traj[i].pos.head(2);
-        if (_map.is_occupied(pos[0], pos[1]))
+        Eigen::Vector2d pos = _traj[i].pos.head(2);
+        /*if (_map.is_occupied(pos[0], pos[1], "obstacles"))*/
+        if (_map.get_cost(pos(0), pos(1), "obstacles") == costmap_2d::LETHAL_OBSTACLE)
         {
             std::cout << termcolor::red << "[Planner Core] Trajectory overlaps obstacle"
                       << termcolor::reset << std::endl;
@@ -285,7 +300,35 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     return true;
 }
 
-std::vector<rfn_state_t> Planner::get_trajectory() { return _solver->get_trajectory(); }
+std::vector<rfn_state_t> Planner::get_trajectory()
+{
+    if (_traj.size() == 0) return {};
+
+    std::vector<rfn_state_t> ret;
+
+    int sz = _traj.size();
+    for (int i = 0; i < _traj.size(); ++i)
+    {
+        Eigen::Vector2d pos = _traj[i].pos.head(2);
+        if (_map.is_occupied(pos[0], pos[1], "inflated"))
+        {
+            sz = i - 1;
+            /*traj.erase(traj.begin() + i, traj.end());*/
+            std::cout << termcolor::red
+                      << "[Planner Core] Trajectory overlaps obstacle, trimming"
+                      << termcolor::reset << std::endl;
+            break;
+        }
+    }
+
+    if (sz > 0)
+        ret.insert(ret.end(), _traj.begin(), _traj.begin() + sz);
+    else
+        std::cout << termcolor::red << "[Planner Core] obs-free traj has 0 size!"
+                  << termcolor::reset << std::endl;
+
+    return ret;
+}
 
 std::vector<rfn_state_t> Planner::get_arclen_traj()
 {
@@ -358,12 +401,13 @@ bool Planner::JPSIntersectObs(const std::vector<Eigen::Vector2d> &path)
         ey                                  = end_cells[1];
 
         _map.raycast(sx, sy, ex, ey, x, y,
-                     {costmap_2d::LETHAL_OBSTACLE, costmap_2d::INSCRIBED_INFLATED_OBSTACLE});
+                     {costmap_2d::LETHAL_OBSTACLE, costmap_2d::INSCRIBED_INFLATED_OBSTACLE},
+                     "inflated");
 
         // if x,y does not reach the end of the ray, we hit an unknown cell
         Eigen::Vector2d p(x, y);
 
-        if ((path[i + 1] - p).norm() > _map.resolution)
+        if ((path[i + 1] - p).norm() > _map.get_resolution())
         {
             std::vector<unsigned int> p_cells = _map.world_to_map(p[0], p[1]);
             return true;
@@ -409,7 +453,7 @@ std::vector<Eigen::Vector2d> Planner::getJPSInFree(const std::vector<Eigen::Vect
         ex                                  = end_cells[0];
         ey                                  = end_cells[1];
 
-        _map.raycast(sx, sy, ex, ey, x, y, {costmap_2d::NO_INFORMATION});
+        _map.raycast(sx, sy, ex, ey, x, y, {costmap_2d::NO_INFORMATION}, "inflated");
 
         // if x,y does not reach the end of the ray, we hit an unknown cell
         Eigen::Vector2d p(x, y);
@@ -429,7 +473,9 @@ std::vector<Eigen::Vector2d> Planner::getJPSInFree(const std::vector<Eigen::Vect
 bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
                            std::vector<double> &ys)
 {
-    std::vector<rfn_state_t> traj = _solver->get_trajectory();
+    std::vector<rfn_state_t> traj = get_trajectory();
+    /*_traj = _solver->get_trajectory();*/
+
     if (traj.size() == 0) return false;
 
     double traj_duration = traj.back().t;
@@ -492,6 +538,7 @@ double Planner::binary_search(double dl, double start, double end, double tolera
 
 double Planner::compute_arclen(double t0, double tf)
 {
+    // find arclength using trapezoid method
     double s  = 0.0;
     double dt = (tf - t0) / 100.;
 

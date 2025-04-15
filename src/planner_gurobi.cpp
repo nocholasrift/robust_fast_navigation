@@ -15,6 +15,8 @@
 #include <unsupported/Eigen/Splines>
 #include <vector>
 
+#include "costmap_2d/cost_values.h"
+
 typedef Eigen::Spline<double, 1, 3> Spline1D;
 typedef Eigen::SplineFitting<Spline1D> SplineFitting1D;
 
@@ -56,6 +58,8 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/solver_traj_dt", _solver_traj_dt, .05);
     nh.param("robust_planner/factor_increment", _factor_increment, 1.0);
     nh.param("robust_planner/force_final_const", _force_final_const, true);
+
+    nh.param("robust_planner/init_inflation_val", _inflate_radius, 0.0);
 
     // params
     _planner_params.SOLVER = _solver_str;
@@ -123,13 +127,14 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     controlTimer = nh.createTimer(ros::Duration(_dt), &PlannerROS::controlLoop, this);
     publishTimer = nh.createTimer(ros::Duration(_dt * 2), &PlannerROS::publishOccupied, this);
 
-    _is_occ             = false;
-    _is_init            = false;
-    _planned            = false;
-    _is_goal_set        = false;
-    _map_received       = false;
-    _primitive_started  = false;
-    _is_costmap_started = false;
+    _is_occ              = false;
+    _is_init             = false;
+    _planned             = false;
+    _is_goal_set         = false;
+    _map_received        = false;
+    _primitive_started   = false;
+    _is_costmap_started  = false;
+    _is_grid_map_started = false;
 
     _prev_jps_path.clear();
 
@@ -154,11 +159,9 @@ void PlannerROS::spin()
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
-    ROS_INFO("initializing global costmap");
+    /*global_costmap = std::make_unique<costmap_2d::Costmap2DROS>("local_costmap", tfBuffer);*/
     global_costmap = std::make_unique<costmap_2d::Costmap2DROS>("global_costmap", tfBuffer);
-    ROS_INFO("starting global costmap");
     global_costmap->start();
-    ROS_INFO("done!");
 
     _is_costmap_started = true;
 
@@ -244,12 +247,11 @@ void PlannerROS::publishOccupied(const ros::TimerEvent &)
 {
     static int prev_points = -1;
 
-    if (!_is_costmap_started) return;
+    if (!_is_costmap_started || !_is_grid_map_started) return;
 
     // costmap_2d::Costmap2D *_map = global_costmap->getCostmap();
-    map_util::occupancy_grid_t occ_grid =
-        map_util::costmap_to_occgrid(*global_costmap->getCostmap());
-    std::vector<Eigen::Vector2d> padded = corridor::getOccupied(occ_grid);
+
+    std::vector<Eigen::Vector2d> padded = corridor::getOccupied(*_occ_grid);
 
     visualization_msgs::Marker paddedMsg;
     paddedMsg.header.frame_id    = _frame_str;
@@ -258,8 +260,8 @@ void PlannerROS::publishOccupied(const ros::TimerEvent &)
     paddedMsg.id                 = 420;
     paddedMsg.type               = visualization_msgs::Marker::CUBE_LIST;
     paddedMsg.action             = visualization_msgs::Marker::ADD;
-    paddedMsg.scale.x            = occ_grid.resolution;
-    paddedMsg.scale.y            = paddedMsg.scale.x;
+    paddedMsg.scale.x            = _occ_grid->get_resolution();
+    paddedMsg.scale.y            = _occ_grid->get_resolution();
     paddedMsg.scale.z            = .1;
     paddedMsg.pose.orientation.w = 1;
     paddedMsg.color.r            = 0.42;
@@ -548,11 +550,55 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     // global_costmap->resetLayers();
     global_costmap->updateMap();
 
+    std::string obs_layer = "obstacles";
+    grid_map::Costmap2DConverter<grid_map::GridMap> converter;
+
+    std::vector<float> cost_translation_table;
+    grid_map::Costmap2DCenturyTranslationTable::create(cost_translation_table);
+
+    std::cout << "TRANSLATION TABLE VALUES" << std::endl;
+    std::cout << cost_translation_table[costmap_2d::LETHAL_OBSTACLE] << std::endl;
+    std::cout << cost_translation_table[costmap_2d::INSCRIBED_INFLATED_OBSTACLE] << std::endl;
+    std::cout << cost_translation_table[costmap_2d::NO_INFORMATION] << std::endl;
+    std::cout << cost_translation_table[costmap_2d::FREE_SPACE] << std::endl;
+
+    std::cout << "MAP SIZE: " << global_costmap->getCostmap()->getSizeInMetersX() << " "
+              << global_costmap->getCostmap()->getSizeInMetersY() << std::endl;
+
+    std::cout << "MAP ORIGIN: " << global_costmap->getCostmap()->getOriginX() << " "
+              << global_costmap->getCostmap()->getOriginY() << std::endl;
+
+    converter.initializeFromCostmap2D(*global_costmap, _grid_map);
+    if (!converter.addLayerFromCostmap2D(*global_costmap, obs_layer, _grid_map))
+    {
+        ROS_ERROR("Failed to generate obstacle layer from costmap");
+        return;
+    }
+
+    // initializer list can't be converted to const reference std::vector<T>
+    std::vector<unsigned char> occ_vals = {costmap_2d::LETHAL_OBSTACLE,
+                                           costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
+
+    double rad = _inflate_radius;
+    if (count >= _failsafe_count)
+    {
+        rad = _inflate_radius / 2;
+    }
+
+    _occ_grid =
+        std::make_unique<map_util::occupancy_grid_t>(_grid_map, obs_layer, occ_vals, rad);
+
+    _is_grid_map_started = true;
+
     /*************************************
     **************** PLAN ****************
     **************************************/
 
-    if (_plan_once && _planned) return;
+    if (_plan_once && _planned)
+    {
+        trajPub.publish(sentTraj);
+        return;
+    }
 
     if (!plan(count >= _failsafe_count))
     {
@@ -602,6 +648,8 @@ bool PlannerROS::plan(bool is_failsafe)
         ROS_WARN("*** FAILSAFE MODE  ENGAGED ****");
         ROS_WARN("*******************************");
     }
+
+    ROS_INFO("MPC horizon size is %lu", mpcHorizon.points.size());
 
     Eigen::MatrixXd initialPVAJ(3, 4);
     Eigen::MatrixXd finalPVAJ(3, 4);
@@ -659,6 +707,8 @@ bool PlannerROS::plan(bool is_failsafe)
 
         int trajInd = std::min((int)(t / _mpc_dt), (int)mpcHorizon.points.size() - 1);
 
+        ROS_INFO("mpc horizon trajInd is %d", trajInd);
+
         trajectory_msgs::JointTrajectoryPoint p = mpcHorizon.points[trajInd];
 
         p_start_t = p.time_from_start.toSec();
@@ -701,12 +751,12 @@ bool PlannerROS::plan(bool is_failsafe)
     **************** PLAN ****************
     **************************************/
 
-    map_util::occupancy_grid_t occ_grid =
-        map_util::costmap_to_occgrid(*global_costmap->getCostmap());
+    /*map_util::occupancy_grid_t occ_grid =*/
+    /*map_util::costmap_to_occgrid(*global_costmap->getCostmap());*/
 
     _planner.set_start(initialPVAJ);
     _planner.set_goal(finalPVAJ);
-    _planner.set_costmap(occ_grid);
+    _planner.set_costmap(*_occ_grid);
 
     std::vector<Eigen::Vector2d> jpsPath;
 
@@ -735,10 +785,7 @@ bool PlannerROS::plan(bool is_failsafe)
         double vel  = initialPVAJ.col(1).norm();
         double acc  = initialPVAJ.col(2).norm();
         double jerk = initialPVAJ.col(3).norm();
-        if (vel > _max_vel || acc > _max_acc || jerk > _max_jerk)
-        {
-            ROS_WARN("initial conditions are too high: %.2f\t%.2f\t%.2f!", vel, acc, jerk);
-        }
+        ROS_WARN("initial conditions: %.2f\t%.2f\t%.2f!", vel, acc, jerk);
     }
 
     // ROS_INFO("planning took %.4f", (ros::Time::now() - start).toSec());
@@ -783,6 +830,23 @@ bool PlannerROS::plan(bool is_failsafe)
     if (!success)
     {
         mpcHorizon.points.clear();
+        std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
+
+        sentTraj.points.clear();
+        for (rfn_state_t &x : arclen_traj)
+        {
+            // time from start is actually arc len in this case...
+            trajectory_msgs::JointTrajectoryPoint p;
+            p.positions.push_back(x.pos(0));
+            p.positions.push_back(x.pos(1));
+            p.time_from_start = ros::Duration(x.t);
+
+            sentTraj.points.push_back(p);
+        }
+
+        visualizeTraj();
+
+        if (!_is_teleop) trajPub.publish(sentTraj);
         return false;
     }
 
@@ -800,18 +864,16 @@ bool PlannerROS::plan(bool is_failsafe)
         sentTraj.header.stamp    = ros::Time::now();
         sentTraj.header.frame_id = _frame_str;
 
-        double t1    = std::round((ros::Time::now() - a).toSec() * 10.) / 10.;
-        double t2    = std::round(_lookahead * 10.) / 10.;
-        int startInd = std::min((int)(t1 / _mpc_dt), (int)mpcHorizon.points.size() - 1) + 1;
-        int trajInd  = std::min((int)(t2 / _mpc_dt), (int)mpcHorizon.points.size() - 1);
-
-        ROS_INFO("iterating: %d\t%d", startInd, trajInd);
-        ROS_INFO("horizon points: %lu", mpcHorizon.points.size());
-        trajectory_msgs::JointTrajectory mpc_segment;
-        for (int i = startInd; i < trajInd; ++i)
-        {
-            mpc_segment.points.push_back(mpcHorizon.points[i]);
-        }
+        /*double t1    = std::round((ros::Time::now() - a).toSec() * 10.) / 10.;*/
+        /*double t2    = std::round(_lookahead * 10.) / 10.;*/
+        /*int startInd = std::min((int)(t1 / _mpc_dt), (int)mpcHorizon.points.size() - 1) + 1;*/
+        /*int trajInd  = std::min((int)(t2 / _mpc_dt), (int)mpcHorizon.points.size() - 1);*/
+        /**/
+        /*trajectory_msgs::JointTrajectory mpc_segment;*/
+        /*for (int i = startInd; i < trajInd; ++i)*/
+        /*{*/
+        /*    mpc_segment.points.push_back(mpcHorizon.points[i]);*/
+        /*}*/
 
         // std::vector<double> ss, xs, ys;
         // bool reparam_status = reparam_traj(ss, xs, ys, mpc_segment);
@@ -905,7 +967,6 @@ bool PlannerROS::plan(bool is_failsafe)
         aTraj.header.stamp    = ros::Time::now();
         sentTraj              = aTraj;
         start                 = ros::Time::now();
-        _is_goal_reset        = false;
     }
     else
     {
@@ -922,6 +983,8 @@ bool PlannerROS::plan(bool is_failsafe)
     mpcHorizon.points.clear();
 
     double totalT = (ros::Time::now() - a).toSec();
+
+    _is_goal_reset = false;
     // ROS_INFO("total time is %.4f", totalT);
 
     return true;

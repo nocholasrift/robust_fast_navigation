@@ -282,8 +282,8 @@ class SolverGurobi
     void setFactorInitialAndFinalAndIncrement(double factor_initial, double factor_final,
                                               double factor_increment);
 
-    GRBLinExpr getPos(int t, double tau, int ii);
-    GRBLinExpr getVel(int t, double tau, int ii);
+    GRBLinExpr getPos(int t, double tau, int ii) const;
+    GRBLinExpr getVel(int t, double tau, int ii) const;
     GRBLinExpr getAccel(int t, double tau, int ii);
     GRBLinExpr getJerk(int t, double tau, int ii);
 
@@ -314,6 +314,10 @@ class SolverGurobi
     double max_solver_time     = 0;
     int N_                     = 10;
     mycallback cb_;
+
+    std::vector<std::vector<GRBVar>> b;  // binary variables
+    std::vector<std::vector<GRBVar>> x;
+    std::vector<std::vector<GRBVar>> u;
 
    protected:
     double cost_;
@@ -347,10 +351,6 @@ class SolverGurobi
     std::vector<GRBQConstr> occ_cons;
 
     std::vector<GRBQConstr> distances_cons;
-
-    std::vector<std::vector<GRBVar>> b;  // binary variables
-    std::vector<std::vector<GRBVar>> x;
-    std::vector<std::vector<GRBVar>> u;
 
     Eigen::MatrixXd occ_point;
 

@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "robust_fast_navigation/grid_map_util.h"
+
 #define IN_OCCUPIED_SPACE 1
 
 namespace jps
@@ -39,8 +41,9 @@ class JPSPlan
     void set_occ_value(double x);
     void set_start(int x, int y);
     void set_destination(int x, int y);
-    void set_map(unsigned char *map, int sizeX, int sizeY, double originX, double originY,
-                 double resolution);
+    void set_map(const std::vector<unsigned char> &map, int sizeX, int sizeY, double originX,
+                 double originY, double resolution);
+    void set_util(const map_util::occupancy_grid_t &map, const std::string &layer);
     int JPS();
 
     std::vector<Eigen::Vector2d> getPath(bool simplify = true);
@@ -70,7 +73,10 @@ class JPSPlan
     std::unordered_map<int, bool> closedSet;
     std::unordered_map<int, std::pair<int, int> > parents;
 
-    unsigned char *_map;
+    std::vector<unsigned char> _map;
+    map_util::occupancy_grid_t _map_util;
+
+    std::string _layer;
 
     int sizeX, sizeY, startX, startY, destX, destY, goalInd;
     double occupied_val, originX, originY, resolution;

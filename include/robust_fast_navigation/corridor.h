@@ -1,9 +1,11 @@
 #pragma once
 
-#include <robust_fast_navigation/map_util.h>
+#include <robust_fast_navigation/grid_map_util.h>
 
 #include <gcopter/firi.hpp>
 #include <gcopter/geo_utils.hpp>
+// #include <grid_map_ros/GridMapRosConverter.hpp>
+// #include <grid_map_ros/grid_map_ros.hpp>
 #include <iostream>
 
 // #include <CGAL/Polygon_2.h>
@@ -28,6 +30,12 @@ inline bool convexCover(const std::vector<Eigen::Vector3d> &path,
                         const double &progress, const double &range,
                         std::vector<Eigen::MatrixX4d> &hpolys, const double eps = 1.0e-6)
 {
+    if (path.size() < 2)
+    {
+        std::cout << "path size is too small" << std::endl;
+        return false;
+    }
+
     hpolys.clear();
     const int n                    = path.size();
     Eigen::Matrix<double, 6, 4> bd = Eigen::Matrix<double, 6, 4>::Zero();
@@ -109,74 +117,33 @@ inline std::vector<Eigen::Vector2d> getOccupied(const map_util::occupancy_grid_t
 {
     std::vector<Eigen::Vector2d> paddedObs;
     // unsigned char *grid = _map.getCharMap();
-    unsigned char *grid = occ_grid.data;
 
-    double resolution = occ_grid.resolution;
-    int width         = occ_grid.width;
-    int height        = occ_grid.height;
+    double resolution = occ_grid.get_resolution();
 
-    for (int i = 0; i < width * height; i++)
+    std::vector<int> size = occ_grid.get_size();
+    int width             = size[0];
+    int height            = size[1];
+
+    for (unsigned int i = 0; i < width; i++)
     {
-        // if (grid[i] == costmap_2d::LETHAL_OBSTACLE ||
-        //     grid[i] == costmap_2d::INSCRIBED_INFLATED_OBSTACLE)
-        // {
-        if (occ_grid.is_occupied(i))
+        for (unsigned int j = 0; j < height; j++)
         {
-            unsigned int mx, my;
-            double x, y;
-            // _map.indexToCells(i, mx, my);
-            std::vector<unsigned int> cells = occ_grid.index_to_cells(i);
-            mx                              = cells[0];
-            my                              = cells[1];
+            if (occ_grid.is_occupied(i, j, "inflated"))
+            {
+                unsigned int mx, my;
+                double x, y;
+                // _map.indexToCells(i, mx, my);
+                std::vector<double> coords = occ_grid.map_to_world(i, j);
+                x                          = coords[0];
+                y                          = coords[1];
 
-            // _map.mapToWorld(mx, my, x, y);
-            std::vector<double> coords = occ_grid.map_to_world(mx, my);
-            x                          = coords[0];
-            y                          = coords[1];
-
-            paddedObs.push_back(Eigen::Vector2d(x, y));
+                paddedObs.push_back(Eigen::Vector2d(x, y));
+            }
         }
     }
 
     return paddedObs;
 }
-
-inline std::vector<Eigen::Vector2f> getLethal(const costmap_2d::Costmap2D &_map)
-{
-    std::vector<Eigen::Vector2f> paddedObs;
-    unsigned char *grid = _map.getCharMap();
-
-    double resolution = _map.getResolution();
-    int width         = _map.getSizeInCellsX();
-    int height        = _map.getSizeInCellsY();
-
-    for (int i = 0; i < width * height; i++)
-    {
-        if (grid[i] == costmap_2d::LETHAL_OBSTACLE)
-        {
-            unsigned int mx, my;
-            double x, y;
-            _map.indexToCells(i, mx, my);
-            _map.mapToWorld(mx, my, x, y);
-
-            paddedObs.push_back(Eigen::Vector2f(x, y));
-        }
-    }
-
-    return paddedObs;
-}
-
-// inline Eigen::MatrixX4d genPoly(const costmap_2d::Costmap2D& _map,
-//                                 double x, double y){
-//     SeedDecomp2D decomp(Vec2f(x, y));
-//     decomp.set_obs(getOccupied(_map));
-//     decomp.set_local_bbox(Vec2f(2,2));
-//     decomp.dilate(.1);
-
-//     auto poly = decomp.get_polyhedron();
-
-//     return getHyperPlanes(poly, Eigen::Vector2d(x,y));
-// }
 
 inline std::vector<Eigen::MatrixX4d> simplifyCorridor(
     const std::vector<Eigen::MatrixX4d> &polys)
@@ -302,10 +269,11 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
 
     prev_obs = obs3d;
 
-    double x = _map.origin_x;
-    double y = _map.origin_y;
-    double w = _map.width * _map.resolution;
-    double h = _map.height * _map.resolution;
+    double x          = _map.get_origin()[0];
+    double y          = _map.get_origin()[1];
+    double resolution = _map.get_resolution();
+    double w          = _map.get_size()[0] * resolution;
+    double h          = _map.get_size()[1] * resolution;
 
     bool status = convexCover(path3d, obs3d, Eigen::Vector3d(x, y, -.1),
                               Eigen::Vector3d(x + w, y + h, .1), 7.0, 5.0, polys);
@@ -316,36 +284,39 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
 
     if (!isInPoly(polys[0], Eigen::Vector2d(initialPVAJ(0, 0), initialPVAJ(1, 0))))
     {
-        std::cout << "end was not in poly, adding extra polygon to correct this\n";
+        std::cout << "[Corridor] Start was not in poly, adding extra polygon to correct this\n";
+        std::vector<Eigen::Vector3d> poses = {initialPVAJ.col(0), initialPVAJ.col(0)};
+        std::vector<Eigen::MatrixX4d> tmp;
+        status = convexCover(poses, obs3d, Eigen::Vector3d(x, y, -.1),
+                             Eigen::Vector3d(x + w, y + h, .1), .1, 5.0, tmp);
+        if (status) polys.insert(polys.begin(), tmp[0]);
     }
 
     if (!isInPoly(polys.back(), Eigen::Vector2d(finalPVAJ(0, 0), finalPVAJ(1, 0))))
     {
-        std::cout << "end was not in poly, adding extra polygon to correct this\n";
+        std::cout << "[Corridor] End was not in poly, adding extra polygon to correct this\n";
     }
 
     // check if obstacles are inside the corridor
-    int count = 0;
     for (Eigen::Vector3d ob : obs3d)
     {
+        if (_map.get_cost(ob(0), ob(1), "obstacles") != costmap_2d::LETHAL_OBSTACLE) continue;
+
         for (Eigen::MatrixX4d poly : polys)
         {
-            unsigned int mx, my;
-            std::vector<unsigned int> cells = _map.world_to_map(ob(0), ob(1));
-            mx                              = cells[0];
-            my                              = cells[1];
-
-            if (isInPoly(poly, Eigen::Vector2d(ob(0), ob(1))) &&
-                _map.get_cost(mx, my) == costmap_2d::LETHAL_OBSTACLE)
+            if (isInPoly(poly, Eigen::Vector2d(ob(0), ob(1))))
             {
-                count++;
+                std::cout << "val: " << _map._map.atPosition("obstacles", ob.head(2))
+                          << std::endl;
+                std::cout << "cost at " << ob.transpose() << " is "
+                          << static_cast<int>(_map.get_cost(ob(0), ob(1), "obstacles"))
+                          << std::endl;
+
+                std::cout << "[Corridor] Obstacle in corridor, generation failed!!!"
+                          << std::endl;
+                return false;
             }
         }
-    }
-    if (count > 0)
-    {
-        std::cout << "Obstacle count inside corridor " << count << std::endl;
-        return false;
     }
 
     return true;

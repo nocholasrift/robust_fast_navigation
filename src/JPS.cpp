@@ -6,6 +6,8 @@
 #include <iostream>
 #include <string>
 
+#include "costmap_2d/cost_values.h"
+
 namespace jps
 {
 /**********************************************************************
@@ -204,7 +206,10 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
             return false;
         }
 
-        if (_map[n.y * sizeX + n.x] == occupied_val)
+        /*if (_map[n.y * sizeX + n.x] == occupied_val)*/
+        unsigned int nx = static_cast<unsigned int>(n.x);
+        unsigned int ny = static_cast<unsigned int>(n.y);
+        if (_map_util.is_occupied(nx, ny, _layer))
         {
             return false;
         }
@@ -222,8 +227,10 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
         bool added = false;
         if (dirx != 0)
         {
-            if (n.y != sizeY - 1 && _map[(n.y + 1) * sizeX + n.x] == occupied_val &&
-                _map[(n.y + 1) * sizeX + n.x + dirx] != occupied_val)
+            /*if (ny != sizeY - 1 && _map[(ny + 1) * sizeX + nx] == occupied_val &&*/
+            /*    _map[(ny + 1) * sizeX + nx + dirx] != occupied_val)*/
+            if (ny != sizeY - 1 && _map_util.is_occupied(nx, ny + 1, _layer) &&
+                !_map_util.is_occupied(nx + dirx, ny + 1, _layer))
             {
                 // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
                 // << dirx << "\t1" << std::endl;
@@ -231,8 +238,10 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
                 added = true;
             }
 
-            if (n.y != 0 && _map[(n.y - 1) * sizeX + n.x] == occupied_val &&
-                _map[(n.y - 1) * sizeX + n.x + dirx] != occupied_val)
+            /*if (n.y != 0 && _map[(n.y - 1) * sizeX + n.x] == occupied_val &&*/
+            /*    _map[(n.y - 1) * sizeX + n.x + dirx] != occupied_val)*/
+            if (ny != 0 && _map_util.is_occupied(nx, ny - 1, _layer) &&
+                !_map_util.is_occupied(nx + dirx, ny - 1, _layer))
             {
                 // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
                 // << dirx << "\t-1" << std::endl;
@@ -243,8 +252,10 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
 
         else
         {
-            if (n.x != sizeX - 1 && _map[n.y * sizeX + n.x + 1] == occupied_val &&
-                _map[(n.y + diry) * sizeX + n.x + 1] != occupied_val)
+            /*if (n.x != sizeX - 1 && _map[n.y * sizeX + n.x + 1] == occupied_val &&*/
+            /*    _map[(n.y + diry) * sizeX + n.x + 1] != occupied_val)*/
+            if (nx != sizeX - 1 && _map_util.is_occupied(nx + 1, ny, _layer) &&
+                !_map_util.is_occupied(nx + 1, ny + diry, _layer))
             {
                 // std::cout << "found forced at (" << n.x << "," << n.y <<
                 // ")\t1\t" << diry << std::endl;
@@ -252,8 +263,10 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
                 added = true;
             }
 
-            if (n.x != 0 && _map[n.y * sizeX + n.x - 1] == occupied_val &&
-                _map[(n.y + diry) * sizeX + n.x - 1] != occupied_val)
+            /*if (n.x != 0 && _map[n.y * sizeX + n.x - 1] == occupied_val &&*/
+            /*    _map[(n.y + diry) * sizeX + n.x - 1] != occupied_val)*/
+            if (nx != 0 && _map_util.is_occupied(nx - 1, ny, _layer) &&
+                !_map_util.is_occupied(nx - 1, ny + diry, _layer))
             {
                 // std::cout << "found forced at (" << n.x << "," << n.y <<
                 // ")\t-1\t" << diry << std::endl;
@@ -338,7 +351,10 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
             return false;
         }
 
-        if (_map[n.y * sizeX + n.x] == occupied_val)
+        unsigned int nx = static_cast<unsigned int>(n.x);
+        unsigned int ny = static_cast<unsigned int>(n.y);
+        /*if (_map[n.y * sizeX + n.x] == occupied_val)*/
+        if (_map_util.is_occupied(nx, ny, _layer))
         {
             return false;
         }
@@ -355,8 +371,14 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
         }
 
         bool added = false;
-        if (_map[n.y * sizeX + curr.x] == occupied_val &&
-            _map[(n.y + diry) * sizeX + curr.x] != occupied_val)
+
+        unsigned int currx = static_cast<unsigned int>(curr.x);
+        unsigned int curry = static_cast<unsigned int>(curr.y);
+
+        /*if (_map[n.y * sizeX + curr.x] == occupied_val &&*/
+        /*    _map[(n.y + diry) * sizeX + curr.x] != occupied_val)*/
+        if (_map_util.is_occupied(currx, ny, _layer) &&
+            !_map_util.is_occupied(currx, ny + diry, _layer))
         {
             // std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
             add_to_parents(n, start, cost);
@@ -367,8 +389,10 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
             added = true;
         }
 
-        if (_map[curr.y * sizeX + n.x] == occupied_val &&
-            _map[curr.y * sizeX + n.x + dirx] != occupied_val)
+        /*if (_map[curr.y * sizeX + n.x] == occupied_val &&*/
+        /*    _map[curr.y * sizeX + n.x + dirx] != occupied_val)*/
+        if (_map_util.is_occupied(nx, curry, _layer) &&
+            !_map_util.is_occupied(nx + dirx, curry, _layer))
         {
             // std::cout << "JP @ (" << n.x << "," << n.y << ")" << std::endl;
             add_to_parents(n, start, cost);
@@ -417,13 +441,15 @@ int JPSPlan::JPS()
 
     goalInd = -1;
 
-    if (_map[startY * sizeX + startX] == occupied_val)
+    /*if (_map[startY * sizeX + startX] == occupied_val)*/
+    if (_map_util.is_occupied((unsigned int)startX, (unsigned int)startY, _layer))
     {
         std::cerr << "start is in occupied space" << std::endl;
         return IN_OCCUPIED_SPACE;
     }
 
-    if (_map[destY * sizeX + destX] == occupied_val)
+    /*if (_map[destY * sizeX + destX] == occupied_val)*/
+    if (_map_util.is_occupied((unsigned int)destX, (unsigned int)destY, _layer))
     {
         std::cerr << "destination is in occupied space" << std::endl;
         return IN_OCCUPIED_SPACE;
@@ -502,15 +528,14 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify)
 
     while (i != startY * sizeX + startX && j++ < 1000)
     {
-        // std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ")
-        // -->";
+        /*std::cout << "(" << i - ((int)(i / sizeX)) * sizeX << "," << i / sizeX << ") --> ";*/
         y = i / sizeX;
         x = i - y * sizeX;
         ret.push_back(Eigen::Vector2d(x, y));
         i = parents[i].first;
     }
 
-    // std::cout << "(" << i-((int)(i/sizeX))*sizeX << "," << i/sizeX << ")\n";
+    /*std::cout << "(" << i - ((int)(i / sizeX)) * sizeX << "," << i / sizeX << ")\n";*/
     unsigned int startInd = startY * sizeX + startX;
     int ax, ay;
     ay = startInd / sizeX;
@@ -571,8 +596,8 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify)
     - map in which grid search will be performed on
     - size of the map in both the x and y directions
 ***********************************************************************/
-void JPSPlan::set_map(unsigned char *map, int sizeX, int sizeY, double originX, double originY,
-                      double resolution)
+void JPSPlan::set_map(const std::vector<unsigned char> &map, int sizeX, int sizeY,
+                      double originX, double originY, double resolution)
 {
     this->_map       = map;
     this->sizeX      = sizeX;
@@ -580,6 +605,12 @@ void JPSPlan::set_map(unsigned char *map, int sizeX, int sizeY, double originX, 
     this->originX    = originX;
     this->originY    = originY;
     this->resolution = resolution;
+}
+
+void JPSPlan::set_util(const map_util::occupancy_grid_t &map, const std::string &layer)
+{
+    _map_util = map;
+    _layer    = layer;
 }
 
 /**********************************************************************
@@ -722,32 +753,37 @@ bool JPSPlan::isBlocked(const Eigen::Vector2d &p1, const Eigen::Vector2d &p2, do
         }
     }
 
-    int dx = ex - sx;
-    int dy = ey - sy;
+    double rayx, rayy;
+    return _map_util.raycast(
+        sx, sy, ex, ey, rayx, rayy,
+        {costmap_2d::LETHAL_OBSTACLE, costmap_2d::INSCRIBED_INFLATED_OBSTACLE}, _layer);
 
-    unsigned int abs_dx = abs(dx);
-    unsigned int abs_dy = abs(dy);
-
-    int offset_dx = dx > 0 ? 1 : -1;
-    int offset_dy = (dy > 0 ? 1 : -1) * this->sizeX;
-
-    unsigned int offset = sy * size_x + sx;
-    double dist         = hypot(dx, dy);
-    double scale        = (dist == 0.0) ? 1.0 : std::min(1.0, max_range / dist);
-
-    unsigned int term;
-    if (abs_dx >= abs_dy)
-    {
-        int error_y = abs_dx / 2;
-        return bresenham(abs_dx, abs_dy, error_y, offset_dx, offset_dy, offset,
-                         (unsigned int)(scale * abs_dx), term);
-    }
-    else
-    {
-        int error_x = abs_dy / 2;
-        return bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx, offset,
-                         (unsigned int)(scale * abs_dy), term);
-    }
+    /*int dx = ex - sx;*/
+    /*int dy = ey - sy;*/
+    /**/
+    /*unsigned int abs_dx = abs(dx);*/
+    /*unsigned int abs_dy = abs(dy);*/
+    /**/
+    /*int offset_dx = dx > 0 ? 1 : -1;*/
+    /*int offset_dy = (dy > 0 ? 1 : -1) * this->sizeX;*/
+    /**/
+    /*unsigned int offset = sy * size_x + sx;*/
+    /*double dist         = hypot(dx, dy);*/
+    /*double scale        = (dist == 0.0) ? 1.0 : std::min(1.0, max_range / dist);*/
+    /**/
+    /*unsigned int term;*/
+    /*if (abs_dx >= abs_dy)*/
+    /*{*/
+    /*    int error_y = abs_dx / 2;*/
+    /*    return bresenham(abs_dx, abs_dy, error_y, offset_dx, offset_dy, offset,*/
+    /*                     (unsigned int)(scale * abs_dx), term);*/
+    /*}*/
+    /*else*/
+    /*{*/
+    /*    int error_x = abs_dy / 2;*/
+    /*    return bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx, offset,*/
+    /*                     (unsigned int)(scale * abs_dy), term);*/
+    /*}*/
 }
 
 /**********************************************************************
@@ -798,18 +834,24 @@ bool JPSPlan::bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, i
 
 bool JPSPlan::worldToMap(double x, double y, unsigned int &mx, unsigned int &my)
 {
-    mx = (int)((x - originX) / resolution);
-    my = (int)((y - originY) / resolution);
-
-    if (mx >= sizeX || my >= sizeY) return false;
+    std::vector<unsigned int> coords = _map_util.world_to_map(x, y);
+    mx                               = coords[0];
+    my                               = coords[1];
+    /*mx = (int)((x - originX) / resolution);*/
+    /*my = (int)((y - originY) / resolution);*/
+    /**/
+    /*if (mx >= sizeX || my >= sizeY) return false;*/
 
     return true;
 }
 
 void JPSPlan::mapToWorld(unsigned int mx, unsigned int my, double &x, double &y)
 {
-    x = originX + (mx + .5) * resolution;
-    y = originY + (my + .5) * resolution;
+    std::vector<double> coords = _map_util.map_to_world(mx, my);
+    x                          = coords[0];
+    y                          = coords[1];
+    /*x = originX + (mx + .5) * resolution;*/
+    /*y = originY + (my + .5) * resolution;*/
 }
 
 }  // end namespace jps

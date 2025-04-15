@@ -14,7 +14,6 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <gcopter/geo_utils.hpp>
-#include <iostream>
 #include <robust_fast_navigation/tinycolormap.hpp>
 #include <string_view>
 #include <tuple>
@@ -377,64 +376,6 @@ inline trajectory_msgs::JointTrajectory convertTrajToMsg(
     }
 
     return msg;
-}
-
-inline bool solver_boilerplate(bool simplify_jps, double max_dist_horizon,
-                               const costmap_2d::Costmap2D &_map, const Eigen::VectorXd &_odom,
-                               Eigen::MatrixXd &initialPVAJ, Eigen::MatrixXd &finalPVAJ,
-                               std::vector<Eigen::Vector2d> &jpsPath)
-{
-    std::cout << "solver boilerplate" << std::endl;
-
-    jps::JPSPlan jps;
-    unsigned int sX, sY, eX, eY;
-    _map.worldToMap(initialPVAJ(0, 0), initialPVAJ(1, 0), sX, sY);
-    _map.worldToMap(finalPVAJ(0, 0), finalPVAJ(1, 0), eX, eY);
-
-    std::cout << "set map locations" << std::endl;
-
-    jps.set_start(sX, sY);
-    jps.set_destination(eX, eY);
-    jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
-
-    jps.set_map(_map.getCharMap(), _map.getSizeInCellsX(), _map.getSizeInCellsY(),
-                _map.getOriginX(), _map.getOriginY(), _map.getResolution());
-
-    std::cout << "set jps locations" << std::endl;
-    jps.JPS();
-    std::cout << "jps finished" << std::endl;
-
-    jpsPath = jps.getPath(simplify_jps);
-
-    std::cout << "simplifying path" << std::endl;
-    if (jpsPath.size() == 0) return false;
-
-    // check if JPS path intersects with sphere
-    std::vector<Eigen::Vector2d> newJPSPath;
-    Eigen::Vector2d goalPoint;
-
-    // ROS_WARN("checking sphere intersection");
-    std::cout << "truncating jps" << std::endl;
-    if (jps.truncateJPS(jpsPath, newJPSPath, max_dist_horizon))
-    {
-        jpsPath = newJPSPath;
-
-        goalPoint = jpsPath.back();
-        if (finalPVAJ.cols() == 4)
-        {
-            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1], 0),
-                Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-        }
-        else
-        {
-            finalPVAJ << Eigen::Vector3d(goalPoint[0], goalPoint[1], 0),
-                Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-        }
-    }
-
-    std::cout << "returning from solver boilerplate" << std::endl;
-
-    return true;
 }
 
 inline void visualizeExpectedFailuresAlongTraj(

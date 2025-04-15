@@ -2,9 +2,10 @@
 
 #include <costmap_2d/cost_values.h>
 #include <costmap_2d/costmap_2d.h>
+#include <robust_fast_navigation/contour_solver.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/faster_wrapper.h>
-#include <robust_fast_navigation/map_util.h>
+#include <robust_fast_navigation/grid_map_util.h>
 #include <robust_fast_navigation/spline.h>
 
 class SplineWrapper
@@ -65,6 +66,7 @@ class Planner
     bool _is_start_set;
 
     std::unique_ptr<SolverBase> _solver;
+    std::vector<rfn_state_t> _traj;
 
     planner_params_t _params;
 

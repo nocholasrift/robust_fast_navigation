@@ -1,11 +1,12 @@
 # Planner logic params
 
 # can be either gcopter or faster
-#solver: "gcopter"
+# solver: "gcopter"
 solver: "faster"
+#solver: "contour"
 
 planner_frequency: .3
-lookahead: .35
+lookahead: .25
 max_deviation: 10
 simplify_jps: true
 jps_hysteresis: false
@@ -16,6 +17,8 @@ max_dist_horizon: 4.5
 frame: "map"
 teleop: false
 max_solve_time: .25
+
+init_inflation_val: .35
 
 use_arclen: true
 

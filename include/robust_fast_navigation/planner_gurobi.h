@@ -11,6 +11,7 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
+#include <robust_fast_navigation/grid_map_util.h>
 #include <robust_fast_navigation/planner_core.h>
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>
@@ -22,6 +23,8 @@
 #include <visualization_msgs/MarkerArray.h>
 
 #include <faster/solver.hpp>
+#include <grid_map_costmap_2d/Costmap2DConverter.hpp>
+#include <grid_map_ros/GridMapRosConverter.hpp>
 #include <string>
 
 class PlannerROS
@@ -70,6 +73,7 @@ class PlannerROS
     bool _simplify_jps;
     bool _jps_hysteresis;
     bool _is_costmap_started;
+    bool _is_grid_map_started;
     bool _map_received;
     bool _is_barn;
     bool _plan_in_free;
@@ -136,6 +140,9 @@ class PlannerROS
 
     std::unique_ptr<costmap_2d::Costmap2DROS> global_costmap;
 
+    grid_map::GridMap _grid_map;
+    std::unique_ptr<map_util::occupancy_grid_t> _occ_grid;
+
     std::vector<float> _predictions;
     std::vector<Eigen::Vector2f> _obs;
     std::vector<Eigen::Vector2d> astarPath;
@@ -163,6 +170,8 @@ class PlannerROS
     double _factor_final;
     double _factor_increment;
     double _max_solve_time;
+
+    double _inflate_radius;
 
     int _n_polys;
     int _n_threads;

@@ -399,12 +399,12 @@ void SolverGurobi::setConstraintsXf()
                 m.addConstr(getPos(N_ - 1, dt_, i) - xf_[i] == 0,
                             "FinalPosAxis_" + std::to_string(i)));  // Final position
         }
-        final_cons.push_back(
-            m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,
-                        "FinalVelAxis_" + std::to_string(i)));  // Final velocity
-        final_cons.push_back(
-            m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,
-                        "FinalAccel_" + std::to_string(i)));  // Final acceleration
+        /*final_cons.push_back(*/
+        /*    m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,*/
+        /*                "FinalVelAxis_" + std::to_string(i)));  // Final velocity*/
+        /*final_cons.push_back(*/
+        /*    m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,*/
+        /*                "FinalAccel_" + std::to_string(i)));  // Final acceleration*/
     }
 }
 
@@ -606,7 +606,7 @@ bool SolverGurobi::genNewTraj()
         // generate MINVO and Bezier conversion matrices
         // std::cout << "Going to try with dt_= " << dt_ << ", should_terminate_=" <<
         // cb_.should_terminate_ << std::endl;
-        setMaxConstraints();
+        /*setMaxConstraints();*/
         setPolytopesConstraints();
         // setOcclusionConstraint();
         setConstraintsX0();
@@ -932,7 +932,7 @@ double SolverGurobi::getDTInitial()
     return dt_initial;
 }
 
-GRBLinExpr SolverGurobi::getPos(int t, double tau, int ii)
+GRBLinExpr SolverGurobi::getPos(int t, double tau, int ii) const
 {
     GRBLinExpr pos = x[t][0 + ii] * tau * tau * tau + x[t][3 + ii] * tau * tau +
                      x[t][6 + ii] * tau + x[t][9 + ii];
@@ -941,7 +941,7 @@ GRBLinExpr SolverGurobi::getPos(int t, double tau, int ii)
     return pos;
 }
 
-GRBLinExpr SolverGurobi::getVel(int t, double tau, int ii)
+GRBLinExpr SolverGurobi::getVel(int t, double tau, int ii) const
 {  // t is the segment, tau is the time inside a specific segment (\in[0,dt], i is the axis)
 
     GRBLinExpr vel = 3 * x[t][0 + ii] * tau * tau + 2 * x[t][3 + ii] * tau + x[t][6 + ii];

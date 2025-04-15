@@ -25,7 +25,7 @@ meter_scoring: true
 # use below for gazebo and mvsim
 footprint: [[-0.25, -0.21], [-0.25, 0.21], [0.25, 0.21], [0.25, -0.21]]
 # footprint: [[-0.21, -0.25], [-0.21, 0.25], [0.21, 0.25], [0.21, -0.25]]
-footprint_padding: 0.07
+footprint_padding: 0.09
 
 update_frequency: 10
 publish_frequency: 10
@@ -40,7 +40,7 @@ plugins:
 #   scan: {sensor_frame: front_laser, data_type: LaserScan, topic: /front/scan, marking: true, clearing: true, min_obstacle_height: -2.0, max_obstacle_height: 2.0, obstacle_range: 6, raytrace_range: 6.0}
 
 inflater_layer:
- inflation_radius: 0.35
+ inflation_radius: 0.0
  cost_scaling_factor: 0.3
 
 static_layer:
