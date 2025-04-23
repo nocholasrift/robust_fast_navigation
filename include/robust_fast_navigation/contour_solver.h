@@ -1,60 +1,15 @@
 #pragma once
 
+#include <endian.h>
 #include <gurobi_c++.h>
 #include <robust_fast_navigation/rfn_types.h>
 
 #include <Eigen/Core>
 #include <array>
-#include <initializer_list>
 #include <memory>
 
 namespace contour_solver
 {
-
-struct GVec;
-struct GLEVec;
-
-struct GVec
-{
-    std::vector<GRBVar> x;
-
-    GVec() {}
-    GVec(std::initializer_list<GRBVar> ilist);
-
-    GLEVec operator+(const GVec &rhs) const;
-    GLEVec operator+(const GLEVec &rhs) const;
-    GLEVec operator-(const GVec &rhs) const;
-    // GLEVec operator*(double rhs) const;
-    GLEVec operator/(double rhs) const;
-
-    GRBVar operator[](int i) const { return x[i]; }
-
-    friend GLEVec operator*(const GVec &lhs, double rhs);
-    friend GLEVec operator*(double lhs, const GVec &rhs);
-};
-
-struct GLEVec
-{
-    std::vector<GRBLinExpr> x;
-
-    GLEVec() {}
-    GLEVec(std::initializer_list<GRBLinExpr> ilist);
-
-    GLEVec operator+(const GVec &rhs) const;
-    GLEVec operator+(const GLEVec &rhs) const;
-    GLEVec operator-(const GLEVec &rhs) const;
-    // GLEVec operator*(double rhs) const;
-    GLEVec operator/(double rhs) const;
-
-    GRBLinExpr operator[](int i) const { return x[i]; }
-
-    friend GLEVec operator*(const GLEVec &lhs, double rhs);
-    friend GLEVec operator*(double lhs, const GLEVec &rhs);
-    friend GLEVec operator*(const Eigen::MatrixX3d &lhs, const GLEVec &rhs);
-
-    GRBQuadExpr squaredNorm();
-};
-// typedef struct GLEVec GLEVec;
 
 class mycallback : public GRBCallback
 {

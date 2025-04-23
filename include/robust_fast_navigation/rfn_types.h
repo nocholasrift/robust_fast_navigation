@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Eigen/Core>
+#include <gurobi_c++.h>
 
-#include "ros/topic.h"
+#include <Eigen/Core>
 
 struct solver_state
 {
@@ -38,11 +38,11 @@ struct planner_params
 };
 typedef struct planner_params planner_params_t;
 
-class Segment
+class RFNSegment
 {
    public:
-    Segment()  = default;
-    ~Segment() = default;
+    RFNSegment()  = default;
+    ~RFNSegment() = default;
 
     Eigen::VectorXd getPos(double t)
     {
@@ -123,5 +123,186 @@ class RFNTrajectory
         return t;
     }
 
-    std::vector<Segment> _segments;
+    std::vector<RFNSegment> _segments;
 };
+
+struct GVec;
+
+// seems compiler doesn't like separation of template
+// implementation into header and src files
+template <typename T>
+struct GEVecBase
+{
+    std::vector<T> x;
+    GEVecBase() {}
+
+    GEVecBase(int sz)
+    {
+        x.reserve(sz);
+        for (int i = 0; i < sz; ++i)
+        {
+            x.push_back(T());
+        }
+    }
+
+    GEVecBase(std::initializer_list<T> ilist)
+    {
+        x.reserve(ilist.size());
+        for (auto it = ilist.begin(); it != ilist.end(); it++)
+        {
+            x.push_back(*it);
+        }
+    }
+    GEVecBase operator+(const GVec &rhs) const;
+
+    GEVecBase operator/(double rhs) const
+    {
+        GEVecBase ret;
+        ret.x.reserve(x.size());
+        for (int i = 0; i < x.size(); ++i)
+        {
+            ret.x.push_back(x[i] / rhs);
+        }
+        return ret;
+    }
+
+    T operator[](int i) const { return x[i]; }
+
+    double size() const { return x.size(); }
+};
+
+using GQEVec = GEVecBase<GRBQuadExpr>;
+
+struct GLEVec : GEVecBase<GRBLinExpr>
+{
+    GRBQuadExpr squaredNorm()
+    {
+        GRBQuadExpr norm = 0;
+        for (int i = 0; i < x.size(); ++i)
+        {
+            norm += x[i] * x[i];
+        }
+        return norm;
+    }
+};
+
+struct GVec
+{
+    std::vector<GRBVar> x;
+
+    GVec() {}
+    GVec(std::initializer_list<GRBVar> ilist);
+
+    GLEVec operator+(const GVec &rhs) const;
+    GLEVec operator+(const GLEVec &rhs) const;
+    GLEVec operator-(const GVec &rhs) const;
+    // GLEVec operator*(double rhs) const;
+    GLEVec operator/(double rhs) const;
+
+    GRBVar operator[](int i) const { return x[i]; }
+
+    double size() const { return x.size(); }
+
+    friend GLEVec operator*(const GVec &lhs, double rhs);
+    friend GLEVec operator*(double lhs, const GVec &rhs);
+};
+
+template <typename T1, typename T2>
+auto operator+(const GEVecBase<T1> &lhs, const GEVecBase<T2> &rhs)
+    -> GEVecBase<decltype(T1() + T2())>
+{
+    using ReturnType = decltype(T1() + T2());
+    if (rhs.x.size() != lhs.x.size() || rhs.x.size() == 0 || lhs.x.size() == 0)
+    {
+        throw std::runtime_error("GEVecBase: size mismatch " + std::to_string(rhs.x.size()) +
+                                 " != " + std::to_string(lhs.x.size()));
+    }
+
+    GEVecBase<ReturnType> ret;
+    ret.x.reserve(rhs.x.size());
+    for (int i = 0; i < rhs.x.size(); ++i)
+    {
+        ret.x.push_back(lhs.x[i] + rhs.x[i]);
+    }
+    return ret;
+}
+
+template <typename T>
+GEVecBase<T> GEVecBase<T>::operator+(const GVec &rhs) const
+{
+    if (rhs.x.size() != x.size() || rhs.x.size() == 0 || x.size() == 0)
+    {
+        throw std::runtime_error("GVec: size mismatch " + std::to_string(rhs.x.size()) +
+                                 " != " + std::to_string(x.size()));
+    }
+
+    GEVecBase ret;
+    ret.x.reserve(x.size());
+    for (int i = 0; i < x.size(); ++i)
+    {
+        ret.x.push_back(x[i] + rhs.x[i]);
+    }
+    return ret;
+}
+
+template <typename T1, typename T2>
+auto operator-(const GEVecBase<T1> &lhs, const GEVecBase<T2> &rhs)
+    -> GEVecBase<decltype(T1() - T2())>
+{
+    using ReturnType = decltype(T1() - T2());
+    if (rhs.x.size() != lhs.x.size() || rhs.x.size() == 0 || lhs.x.size() == 0)
+    {
+        throw std::runtime_error("GEVecBase: size mismatch " + std::to_string(rhs.x.size()) +
+                                 " != " + std::to_string(lhs.x.size()));
+    }
+
+    GEVecBase<ReturnType> ret;
+    ret.x.reserve(rhs.x.size());
+    for (int i = 0; i < rhs.x.size(); ++i)
+    {
+        ret.x.push_back(lhs.x[i] - rhs.x[i]);
+    }
+    return ret;
+}
+
+template <typename T>
+GEVecBase<T> operator*(const GEVecBase<T> &lhs, double rhs)
+{
+    GEVecBase<T> ret;
+    ret.x.reserve(lhs.x.size());
+    for (int i = 0; i < lhs.x.size(); ++i)
+    {
+        ret.x.push_back(lhs.x[i] * rhs);
+    }
+    return ret;
+}
+
+template <typename T>
+GEVecBase<T> operator*(double lhs, const GEVecBase<T> &rhs)
+{
+    return rhs * lhs;
+}
+
+template <typename T>
+GEVecBase<T> operator*(const Eigen::MatrixXd &lhs, const GEVecBase<T> &rhs)
+{
+    if (lhs.cols() != rhs.x.size() || rhs.x.size() == 0)
+    {
+        throw std::runtime_error("GEVecBase: size mismatch " + std::to_string(lhs.cols()) +
+                                 " != " + std::to_string(rhs.x.size()));
+    }
+
+    GEVecBase<T> ret;
+    ret.x.reserve(lhs.rows());
+    for (int i = 0; i < lhs.rows(); ++i)
+    {
+        T expr = 0;
+        for (int j = 0; j < lhs.cols(); ++j)
+        {
+            expr += lhs(i, j) * rhs.x[j];
+        }
+        ret.x.push_back(expr);
+    }
+
+    return ret;
+}

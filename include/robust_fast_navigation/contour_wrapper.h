@@ -1,6 +1,8 @@
 #pragma once
 
-#include <robust_fast_navigation/contour_solver.h>
+/*#include <robust_fast_navigation/contour_solver.h>*/
+/*#include */
+#include <robust_fast_navigation/planar_ph.h>
 #include <robust_fast_navigation/solver_base.h>
 
 class ContourWrapper : public SolverBase
@@ -18,5 +20,5 @@ class ContourWrapper : public SolverBase
     void set_params(const planner_params_t& params) override;
 
    protected:
-    contour_solver::ContourSolver _solver;
+    planar_ph::PHContourSolver _solver;
 };

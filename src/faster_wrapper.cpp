@@ -85,10 +85,10 @@ bool FasterWrapper::solve()
 
         for (int segment = 0; segment < _solver.N_; ++segment)
         {
-            Segment& piece = _traj._segments.emplace_back();
-            piece._x[0]    = Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
-                                             _solver.x[segment][1].get(GRB_DoubleAttr_X),
-                                             _solver.x[segment][2].get(GRB_DoubleAttr_X));
+            RFNSegment& piece = _traj._segments.emplace_back();
+            piece._x[0]       = Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
+                                                _solver.x[segment][1].get(GRB_DoubleAttr_X),
+                                                _solver.x[segment][2].get(GRB_DoubleAttr_X));
 
             piece._x[1] = Eigen::Vector3d(_solver.x[segment][3].get(GRB_DoubleAttr_X),
                                           _solver.x[segment][4].get(GRB_DoubleAttr_X),

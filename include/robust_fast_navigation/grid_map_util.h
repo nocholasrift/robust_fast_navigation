@@ -1,13 +1,15 @@
 #pragma once
 
 #include <costmap_2d/cost_values.h>
+#include <robust_fast_navigation/rfn_types.h>
 
+#include <grid_map_cv/GridMapCvConverter.hpp>
 #include <grid_map_cv/grid_map_cv.hpp>
 #include <grid_map_ros/GridMapRosConverter.hpp>
 #include <grid_map_ros/grid_map_ros.hpp>
+#include <grid_map_sdf/SignedDistance2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#include "grid_map_cv/GridMapCvConverter.hpp"
 #include "opencv2/imgproc.hpp"
 
 namespace map_util
@@ -17,6 +19,7 @@ class OccupancyGrid
 {
    public:
     grid_map::GridMap _map;
+    grid_map::Matrix _sdf;
     std::string _obstacle_layer;
 
     std::vector<unsigned char> occupied_values;
@@ -30,6 +33,15 @@ class OccupancyGrid
         _obstacle_layer = obs_layer;
         occupied_values = ov;
         inflate_obstacles(radius, "inflated");
+
+        create_sdf();
+
+        // convert inflated obstacle layer to signed distance field
+        /*Eigen::Matrix<bool, -1, -1> binary_map =*/
+        /*    _map.get("inflated").unaryExpr([](float val) { return val > 90.; });*/
+        /**/
+        /*_sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(*/
+        /*    binary_map, _map.getResolution());*/
     }
 
     // define these functions with vectors so we can pybind them more easily
@@ -41,6 +53,33 @@ class OccupancyGrid
             throw std::invalid_argument("[world_to_map] x or y is not within map bounds");
 
         return {static_cast<unsigned int>(indices[0]), static_cast<unsigned int>(indices[1])};
+    }
+
+    void create_sdf()
+    {
+        Eigen::Matrix<bool, -1, -1> binary_map =
+            _map.get("inflated").unaryExpr([](float val) { return val > 90.; });
+        _sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(
+            binary_map, _map.getResolution());
+    }
+
+    double get_dist(double x, double y) const
+    {
+        grid_map::Position p(x, y);
+        grid_map::Index idx;
+        if (!_map.getIndex(p, idx))
+            throw std::invalid_argument("[get_dist] x or y is not within map bounds");
+        return _sdf(idx[0], idx[1]);
+    }
+
+    Eigen::Vector2d get_dist_grad(double x, double y) const
+    {
+        const double eps = _map.getResolution() + 1e-2;
+
+        double dx = (get_dist(x + eps, y) - get_dist(x - eps, y)) / (2.0 * eps);
+        double dy = (get_dist(x, y + eps) - get_dist(x, y - eps)) / (2.0 * eps);
+
+        return Eigen::Vector2d(dx, dy).normalized();
     }
 
     std::vector<double> map_to_world(unsigned int mx, unsigned int my) const
@@ -149,7 +188,8 @@ class OccupancyGrid
         /**/
         /*    if (is_occupied(pos[0], pos[1], _obstacle_layer)) continue;*/
         /**/
-        /*    for (grid_map::CircleIterator cit(_map, pos, radius); !cit.isPastEnd(); ++cit)*/
+        /*    for (grid_map::CircleIterator cit(_map, pos, radius); !cit.isPastEnd();
+         * ++cit)*/
         /*    {*/
         /*        float &val = _map.at(inflated_layer, *cit);*/
         /*        val        = std::max(val, 1.0f);*/
@@ -201,6 +241,31 @@ class OccupancyGrid
         y = ray_end(1);
 
         return ray_hit;
+    }
+
+    void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,
+                         int max_iters = 20)
+    {
+        double step_size = _map.getResolution() / 2.0;
+        for (rfn_state_t &x : traj)
+        {
+            // perform gradient descent on point if it is too close to obstacles
+            double dist       = get_dist(x.pos(0), x.pos(1));
+            Eigen::Vector2d p = x.pos.head(2);
+            if (dist < thresh_dist)
+            {
+                for (int i = 0; i < max_iters && dist < thresh_dist; ++i)
+                {
+                    // get normalized gradient vector to obstacle
+                    Eigen::Vector2d grad = get_dist_grad(p(0), p(1));
+                    p                    = p + step_size * grad;
+                    dist                 = get_dist(p(0), p(1));
+                }
+
+                // update trajectory
+                x.pos.head(2) = p;
+            }
+        }
     }
 
    private:

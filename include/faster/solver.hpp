@@ -318,6 +318,7 @@ class SolverGurobi
     std::vector<std::vector<GRBVar>> b;  // binary variables
     std::vector<std::vector<GRBVar>> x;
     std::vector<std::vector<GRBVar>> u;
+    std::vector<GRBVar> slacks;
 
    protected:
     double cost_;

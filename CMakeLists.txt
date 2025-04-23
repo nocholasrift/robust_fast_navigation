@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
 
   grid_map_cv
   grid_map_ros
+  grid_map_sdf
   grid_map_core
   grid_map_costmap_2d
 )
@@ -44,6 +45,7 @@ catkin_package(
   CATKIN_DEPENDS message_runtime
 )
 
+
 ###########
 ## Build ##
 ###########
@@ -60,9 +62,11 @@ include_directories(
 add_executable(planner
     src/JPS.cpp
     src/solver.cpp 
+    src/rfn_types.cpp
+    src/planar_ph.cpp
     src/planner_core.cpp
     src/planner_gurobi.cpp 
-    src/contour_solver.cpp
+    # src/contour_solver.cpp
     src/faster_wrapper.cpp
     src/gcopter_wrapper.cpp
     src/contour_wrapper.cpp
@@ -75,3 +79,11 @@ target_link_libraries(planner
     Eigen3::Eigen
 )
 
+add_executable(ph_demo
+    src/ph_demo.cpp
+)
+target_link_libraries(ph_demo
+    ${catkin_LIBRARIES}
+    Eigen3::Eigen
+    ipopt
+)

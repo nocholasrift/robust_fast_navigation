@@ -77,19 +77,34 @@ void Planner::set_costmap(const map_util::occupancy_grid_t &map)
     _is_map_set = true;
 }
 
-bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
-                   std::vector<Eigen::MatrixX4d> &hPolys)
+PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
+                            std::vector<Eigen::MatrixX4d> &hPolys)
 {
     if (!_is_start_set || !_is_goal_set || !_is_map_set)
     {
         std::cout << termcolor::red << "[Planner Core] missing start, goal or costmap"
                   << termcolor::reset << std::endl;
-        return false;
+        return MISC_FAILURE;
     }
+
+    /*_sdf_solver = std::make_unique<BezierSdfNLP>(*/
+    /*    _params.N_SEGMENTS, 1, [this](double x, double y) { return _map->get_dist(x, y); });*/
 
     /*************************************
     ************ PERFORM  JPS ************
     **************************************/
+
+    if (_map.is_occupied(_start(0, 0), _start(1, 0), "inflated"))
+    {
+        std::cout << termcolor::yellow << "[Planner Core] Start in occupied space, pushing!!!"
+                  << termcolor::reset << std::endl;
+        rfn_state_t start;
+        start.pos                          = Eigen::Vector3d(_start(0, 0), _start(1, 0), 0);
+        std::vector<rfn_state_t> start_vec = {start};
+        _map.push_trajectory(start_vec);
+        _start(0, 0) = start_vec[0].pos(0);
+        _start(1, 0) = start_vec[0].pos(1);
+    }
 
     jps::JPSPlan jps;
     unsigned int sX, sY, eX, eY;
@@ -142,7 +157,19 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     {
         std::cout << termcolor::red << "[Planner Core] JPS failed" << termcolor::reset
                   << std::endl;
-        return false;
+        if (jps_status == IN_OCCUPIED_SPACE)
+        {
+            std::cout << termcolor::red << "[Planner Core] JPS failed, start in occupied space"
+                      << termcolor::reset << std::endl;
+
+            return START_IN_OBSTACLE;
+        }
+        else
+        {
+            std::cout << termcolor::red << "[Planner Core] JPS failed to find path"
+                      << termcolor::reset << std::endl;
+            return JPS_FAIL_NO_PATH;
+        }
     }
 
     // check if old jps path has value
@@ -217,7 +244,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     {
         std::cout << termcolor::red << "[Planner Core] JPS modifications failed"
                   << termcolor::reset << std::endl;
-        return false;
+        return JPS_FAIL_NO_PATH;
     }
 
     /*************************************
@@ -229,7 +256,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     {
         std::cout << termcolor::red << "[Planner Core] Corridor creation failed"
                   << termcolor::reset << std::endl;
-        return false;
+        return CORRIDOR_FAIL;
     }
 
     bool is_in_corridor = false;
@@ -240,7 +267,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
         if (!geo_utils::overlap(hPolys[p], hPolys[p + 1]))
         {
             // ROS_ERROR("CORRIDOR IS NOT FULLY CONNECTED");
-            return false;
+            return CORRIDOR_FAIL;
         }
 
         if (!is_in_corridor)
@@ -259,7 +286,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     {
         std::cout << termcolor::red << "[Planner Core] Solver setup failed" << termcolor::reset
                   << std::endl;
-        return false;
+        return TRAJ_GEN_FAIL;
     }
 
     // time trajectory generation
@@ -268,7 +295,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
     {
         std::cout << termcolor::red << "[Planner Core] Generating trajectory failed"
                   << termcolor::reset << std::endl;
-        return false;
+        return TRAJ_GEN_FAIL;
     }
     else
     {
@@ -287,7 +314,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
         {
             std::cout << termcolor::red << "[Planner Core] Trajectory overlaps obstacle"
                       << termcolor::reset << std::endl;
-            return false;
+            return TRAJ_GEN_FAIL;
         }
     }
 
@@ -297,7 +324,7 @@ bool Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
 
     _old_goal = _goal;
 
-    return true;
+    return SUCCESS;
 }
 
 std::vector<rfn_state_t> Planner::get_trajectory()
@@ -313,7 +340,6 @@ std::vector<rfn_state_t> Planner::get_trajectory()
         if (_map.is_occupied(pos[0], pos[1], "inflated"))
         {
             sz = i - 1;
-            /*traj.erase(traj.begin() + i, traj.end());*/
             std::cout << termcolor::red
                       << "[Planner Core] Trajectory overlaps obstacle, trimming"
                       << termcolor::reset << std::endl;
@@ -350,6 +376,8 @@ std::vector<rfn_state_t> Planner::get_arclen_traj()
         x.pos(1)       = ys[i];
         x.t            = ss[i];
     }
+
+    _map.push_trajectory(ret);
 
     return ret;
 }

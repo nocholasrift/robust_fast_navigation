@@ -6,6 +6,7 @@
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/faster_wrapper.h>
 #include <robust_fast_navigation/grid_map_util.h>
+/*#include <robust_fast_navigation/ipopt_grad.h>*/
 #include <robust_fast_navigation/spline.h>
 
 class SplineWrapper
@@ -14,6 +15,16 @@ class SplineWrapper
     tk::spline spline;  // Expose the tk::spline
 };
 typedef SplineWrapper spline_t;
+
+enum PlannerStatus
+{
+    SUCCESS           = 0,
+    MISC_FAILURE      = 1,
+    JPS_FAIL_NO_PATH  = 2,
+    START_IN_OBSTACLE = 3,
+    CORRIDOR_FAIL     = 4,
+    TRAJ_GEN_FAIL     = 5,
+};
 
 class Planner
 {
@@ -44,8 +55,8 @@ class Planner
 
     // Eigen::Matrix3Xd get_corridor_boundary();
 
-    bool plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
-              std::vector<Eigen::MatrixX4d> &hPolys);
+    PlannerStatus plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
+                       std::vector<Eigen::MatrixX4d> &hPolys);
 
     std::vector<Eigen::Vector2d> getJPSInFree(const std::vector<Eigen::Vector2d> &path);
     bool JPSIntersectObs(const std::vector<Eigen::Vector2d> &path);

@@ -16,6 +16,10 @@
 #include <vector>
 
 #include "costmap_2d/cost_values.h"
+#include "costmap_2d/inflation_layer.h"
+#include "costmap_2d/layered_costmap.h"
+#include "robust_fast_navigation/planner_core.h"
+#include "ros/console.h"
 
 typedef Eigen::Spline<double, 1, 3> Spline1D;
 typedef Eigen::SplineFitting<Spline1D> SplineFitting1D;
@@ -45,8 +49,9 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/barn_goal_dist", _barn_goal_dist, 10.);
     nh.param<std::string>("robust_planner/frame", _frame_str, "map");
     nh.param("robust_planner/jps_hysteresis", _jps_hysteresis, false);
-    nh.param<std::string>("robust_planner/solver", _solver_str, "faster");
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
+    nh.param<std::string>("robust_planner/solver", _solver_str, "faster");
+    nh.param("robust_planner/use_global_costmap", _use_global_costmap, true);
 
     nh.param("robust_planner/n_polys", _n_polys, 6);
     nh.param("robust_planner/threads", _n_threads, 0);
@@ -136,6 +141,8 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     _is_costmap_started  = false;
     _is_grid_map_started = false;
 
+    _prev_plan_status = SUCCESS;
+
     _prev_jps_path.clear();
 
     _prev_jps_cost = -1;
@@ -159,9 +166,12 @@ void PlannerROS::spin()
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
-    /*global_costmap = std::make_unique<costmap_2d::Costmap2DROS>("local_costmap", tfBuffer);*/
-    global_costmap = std::make_unique<costmap_2d::Costmap2DROS>("global_costmap", tfBuffer);
-    global_costmap->start();
+    if (_use_global_costmap)
+        _costmap = std::make_unique<costmap_2d::Costmap2DROS>("global_costmap", tfBuffer);
+    else
+        _costmap = std::make_unique<costmap_2d::Costmap2DROS>("local_costmap", tfBuffer);
+
+    _costmap->start();
 
     _is_costmap_started = true;
 
@@ -248,8 +258,6 @@ void PlannerROS::publishOccupied(const ros::TimerEvent &)
     static int prev_points = -1;
 
     if (!_is_costmap_started || !_is_grid_map_started) return;
-
-    // costmap_2d::Costmap2D *_map = global_costmap->getCostmap();
 
     std::vector<Eigen::Vector2d> padded = corridor::getOccupied(*_occ_grid);
 
@@ -547,8 +555,7 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     ************* UPDATE MAP *************
     **************************************/
 
-    // global_costmap->resetLayers();
-    global_costmap->updateMap();
+    _costmap->updateMap();
 
     std::string obs_layer = "obstacles";
     grid_map::Costmap2DConverter<grid_map::GridMap> converter;
@@ -556,37 +563,65 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     std::vector<float> cost_translation_table;
     grid_map::Costmap2DCenturyTranslationTable::create(cost_translation_table);
 
-    std::cout << "TRANSLATION TABLE VALUES" << std::endl;
-    std::cout << cost_translation_table[costmap_2d::LETHAL_OBSTACLE] << std::endl;
-    std::cout << cost_translation_table[costmap_2d::INSCRIBED_INFLATED_OBSTACLE] << std::endl;
-    std::cout << cost_translation_table[costmap_2d::NO_INFORMATION] << std::endl;
-    std::cout << cost_translation_table[costmap_2d::FREE_SPACE] << std::endl;
+    /*std::cout << "TRANSLATION TABLE VALUES" << std::endl;*/
+    /*std::cout << cost_translation_table[costmap_2d::LETHAL_OBSTACLE] << std::endl;*/
+    /*std::cout << cost_translation_table[costmap_2d::INSCRIBED_INFLATED_OBSTACLE] <<
+     * std::endl;*/
+    /*std::cout << cost_translation_table[costmap_2d::NO_INFORMATION] << std::endl;*/
+    /*std::cout << cost_translation_table[costmap_2d::FREE_SPACE] << std::endl;*/
 
-    std::cout << "MAP SIZE: " << global_costmap->getCostmap()->getSizeInMetersX() << " "
-              << global_costmap->getCostmap()->getSizeInMetersY() << std::endl;
+    /*std::cout << "MAP SIZE: " << global_costmap->getCostmap()->getSizeInMetersX() << " "*/
+    /*          << global_costmap->getCostmap()->getSizeInMetersY() << std::endl;*/
+    /**/
+    /*std::cout << "MAP ORIGIN: " << global_costmap->getCostmap()->getOriginX() << " "*/
+    /*          << global_costmap->getCostmap()->getOriginY() << std::endl;*/
 
-    std::cout << "MAP ORIGIN: " << global_costmap->getCostmap()->getOriginX() << " "
-              << global_costmap->getCostmap()->getOriginY() << std::endl;
-
-    converter.initializeFromCostmap2D(*global_costmap, _grid_map);
-    if (!converter.addLayerFromCostmap2D(*global_costmap, obs_layer, _grid_map))
+    converter.initializeFromCostmap2D(*_costmap, _grid_map);
+    if (!converter.addLayerFromCostmap2D(*_costmap, obs_layer, _grid_map))
     {
         ROS_ERROR("Failed to generate obstacle layer from costmap");
         return;
     }
+
+    /*costmap_2d::LayeredCostmap *layered_map = _costmap->getLayeredCostmap();*/
+    /*converter.addLayerFromCostmap2D(*layered_map->getCostmap(), "inflated", _grid_map);*/
+
+    /*for (auto layer : *layered_map->getPlugins())*/
+    /*{*/
+    /*    std::cout << layer->getName() << std::endl;*/
+    /*    if (layer->getName().find("inflation_layer") != std::string::npos)*/
+    /*    {*/
+    /*        // Cast to InflationLayer*/
+    /*        costmap_2d::InflationLayer *inflation_layer =*/
+    /*            dynamic_cast<costmap_2d::InflationLayer *>(layer);*/
+    /*        if (inflation_layer)*/
+    /*        {*/
+    /*            const costmap_2d::Costmap2D *costmap = inflation_layer.getCostmap();*/
+    /*            converter.addLayerFromCostmap2D(*costmap, "inflated_layer", _grid_map);*/
+    /*        }*/
+    /*    }*/
+    /*}*/
 
     // initializer list can't be converted to const reference std::vector<T>
     std::vector<unsigned char> occ_vals = {costmap_2d::LETHAL_OBSTACLE,
                                            costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
 
     double rad = _inflate_radius;
-    if (count >= _failsafe_count)
-    {
-        rad = _inflate_radius / 2;
-    }
+    /*if (count >= _failsafe_count && _prev_plan_status == START_IN_OBSTACLE &&*/
+    /*    _is_grid_map_started)*/
+    /*{*/
+    /*    rad = .5 * _inflate_radius;*/
+    /*}*/
 
+    ros::Time start = ros::Time::now();
     _occ_grid =
         std::make_unique<map_util::occupancy_grid_t>(_grid_map, obs_layer, occ_vals, rad);
+
+    std::cout << "dist and grad @ (-2.0, 5.4) is ";
+    std::cout << _occ_grid->get_dist(-2.0, 5.4) << " "
+              << _occ_grid->get_dist_grad(-2.0, 5.4).transpose() << std::endl;
+
+    ROS_INFO("Occupancy grid created in %.4f seconds", (ros::Time::now() - start).toSec());
 
     _is_grid_map_started = true;
 
@@ -777,8 +812,9 @@ bool PlannerROS::plan(bool is_failsafe)
 
     std::vector<Eigen::MatrixX4d> hPolys;
 
-    bool success = _planner.plan(_curr_horizon, jpsPath, hPolys);
-    if (!success)
+    _prev_plan_status = _planner.plan(_curr_horizon, jpsPath, hPolys);
+    std::cout << "PLAN STATUS IS " << _prev_plan_status << std::endl;
+    if (_prev_plan_status)
     {
         ROS_WARN("Planner failed to find path");
         // check if initial velocity, acceleration, or jerk are higher than max
@@ -827,7 +863,7 @@ bool PlannerROS::plan(bool is_failsafe)
     jpsPub.publish(jpsMsg);
     ROS_INFO("published jps path: %lu", jpsPath.size());
 
-    if (!success)
+    if (_prev_plan_status)
     {
         mpcHorizon.points.clear();
         std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
@@ -857,6 +893,12 @@ bool PlannerROS::plan(bool is_failsafe)
     **************************************/
 
     std::vector<rfn_state_t> planned_trajectory = _planner.get_trajectory();
+
+    if (planned_trajectory.size() == 0)
+    {
+        ROS_WARN("planned trajectory is empty!");
+        return false;
+    }
 
     if (_use_arclen)
     {
@@ -895,6 +937,8 @@ bool PlannerROS::plan(bool is_failsafe)
         // }
 
         std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
+        /*_occ_grid->push_trajectory(arclen_traj);*/
+        /*ROS_WARN("PUSHING TRAJECTORY");*/
 
         for (rfn_state_t &x : arclen_traj)
         {

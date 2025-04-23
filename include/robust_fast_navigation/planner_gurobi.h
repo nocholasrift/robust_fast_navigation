@@ -64,6 +64,7 @@ class PlannerROS
 
     bool _use_arclen;
     bool _is_init;
+    bool _use_global_costmap;
     bool _started_costmap;
     bool _is_goal_set;
     bool _is_teleop;
@@ -90,6 +91,7 @@ class PlannerROS
     trajectory_msgs::JointTrajectory mpcHorizon;
 
     Planner _planner;
+    PlannerStatus _prev_plan_status;
     planner_params_t _planner_params;
 
     ros::Time start, state_transition_start_t;
@@ -138,10 +140,11 @@ class PlannerROS
     ros::Publisher currentReferencePub;
     ros::Publisher ctrlPointPub;
 
-    std::unique_ptr<costmap_2d::Costmap2DROS> global_costmap;
+    std::unique_ptr<costmap_2d::Costmap2DROS> _costmap;
 
     grid_map::GridMap _grid_map;
     std::unique_ptr<map_util::occupancy_grid_t> _occ_grid;
+    /*std::unique_ptr<BezierSdfNLP> _sdf_solver;*/
 
     std::vector<float> _predictions;
     std::vector<Eigen::Vector2f> _obs;

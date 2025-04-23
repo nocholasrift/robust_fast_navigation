@@ -3,7 +3,7 @@
 # can be either gcopter or faster
 # solver: "gcopter"
 solver: "faster"
-#solver: "contour"
+# solver: "contour"
 
 planner_frequency: .3
 lookahead: .25
@@ -18,9 +18,10 @@ frame: "map"
 teleop: false
 max_solve_time: .25
 
-init_inflation_val: .35
+init_inflation_val: .30
 
 use_arclen: true
+use_global_costmap: true
 
 recovery_thresh: 9
 recovery_horizon: 20
