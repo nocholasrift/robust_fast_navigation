@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "costmap_2d/cost_values.h"
+#include "robust_fast_navigation/contour_solver.h"
 #include "robust_fast_navigation/contour_wrapper.h"
 #include "robust_fast_navigation/faster_wrapper.h"
 #include "robust_fast_navigation/gcopter_wrapper.h"
@@ -131,7 +132,7 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
     int w             = _map.get_size()[0];
     int h             = _map.get_size()[1];
 
-    jps.set_map(_map.get_data("inflated"), w, h, x, y, resolution);
+    /*jps.set_map(_map.get_data("inflated"), w, h, x, y, resolution);*/
     jps.set_util(_map, "inflated");
 
     unsigned int test1, test2;
@@ -377,7 +378,7 @@ std::vector<rfn_state_t> Planner::get_arclen_traj()
         x.t            = ss[i];
     }
 
-    _map.push_trajectory(ret);
+    /*_map.push_trajectory(ret);*/
 
     return ret;
 }
@@ -517,14 +518,27 @@ bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
     xs.resize(M + 1);
     ys.resize(M + 1);
 
+    if (_params.SOLVER == "contour")
+    {
+        // cast to contour solver
+        ContourWrapper *contour_solver = dynamic_cast<ContourWrapper *>(_solver.get());
+        ds                             = contour_solver->get_arclen() / M;
+        for (int i = 0; i < M + 1; ++i)
+        {
+            ss[i] = i * ds;
+            xs[i] = _solver->get_pos(ss[i], 0);
+            ys[i] = _solver->get_pos(ss[i], 1);
+        }
+
+        return true;
+    }
+
     double previous_ti = 0;
     for (int i = 0; i <= M; ++i)
     {
         double s = i * ds;
 
         double ti = binary_search(s, previous_ti, traj_duration, 1e-3);
-
-        // std::cout << "s is " << s << " and ti is " << ti << std::endl;
 
         ss[i] = s;
         xs[i] = _solver->get_pos(ti, 0);

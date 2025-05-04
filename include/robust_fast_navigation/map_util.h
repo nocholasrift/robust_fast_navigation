@@ -2,12 +2,20 @@
 
 #include <costmap_2d/cost_values.h>
 #include <costmap_2d/costmap_2d.h>
+#include <robust_fast_navigation/rfn_types.h>
+
+#include <Eigen/Core>
+#include <grid_map_ros/GridMapRosConverter.hpp>
+#include <grid_map_ros/grid_map_ros.hpp>
+#include <grid_map_sdf/SignedDistance2d.hpp>
+#include <vector>
 
 namespace map_util
 {
 // struct mimicing nav_msgs::OccupancyGrid
-struct occupancy_grid
+class OccupancyGrid
 {
+   private:
     unsigned char *data;
     int width;
     int height;
@@ -15,9 +23,12 @@ struct occupancy_grid
     double origin_x;
     double origin_y;
 
+    grid_map::Matrix _sdf;
+
     std::vector<unsigned char> occupied_values;
 
-    occupancy_grid()
+   public:
+    OccupancyGrid()
     {
         width      = 0;
         height     = 0;
@@ -27,8 +38,8 @@ struct occupancy_grid
         data       = nullptr;
     }
 
-    occupancy_grid(int w, int h, double res, double ox, double oy, unsigned char *d,
-                   std::vector<unsigned char> ov)
+    OccupancyGrid(int w, int h, double res, double ox, double oy, unsigned char *d,
+                  std::vector<unsigned char> ov)
     {
         width           = w;
         height          = h;
@@ -37,6 +48,59 @@ struct occupancy_grid
         origin_y        = oy;
         data            = d;
         occupied_values = ov;
+    }
+
+    OccupancyGrid(const costmap_2d::Costmap2D &costmap)
+    {
+        width           = costmap.getSizeInCellsX();
+        height          = costmap.getSizeInCellsY();
+        resolution      = costmap.getResolution();
+        origin_x        = costmap.getOriginX();
+        origin_y        = costmap.getOriginY();
+        occupied_values = {costmap_2d::LETHAL_OBSTACLE,
+                           costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
+        data            = costmap.getCharMap();
+
+        Eigen::Matrix<bool, -1, -1> binary_map(height, width);
+        for (unsigned int i = 0; i < height; i++)
+        {
+            for (unsigned int j = 0; j < width; j++)
+            {
+                unsigned char val = costmap.getCost(j, i);
+                binary_map(i, j)  = val >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
+            }
+        }
+
+        _sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(binary_map,
+                                                                            resolution);
+    }
+
+    double get_signed_dist(double x, double y) const
+    {
+        std::vector<unsigned int> cells = world_to_map(x, y);
+        unsigned int mx                 = cells[0];
+        unsigned int my                 = cells[1];
+        if (mx >= width || my >= height)
+            throw std::invalid_argument(
+                "[get_signed_distance] mx or my is greater than width or height");
+
+        /*std::cout << "getting signed distance!" << std::endl;*/
+        /*std::cout << "mx: " << mx << " my: " << my << std::endl;*/
+        /*std::cout << "widht: " << _sdf.rows() << " height: " << _sdf.cols() << std::endl;*/
+        return _sdf(my, mx);
+    }
+
+    std::vector<double> get_dist_grad(double x, double y) const
+    {
+        const double eps = resolution + 1e-2;
+
+        double dx = (get_signed_dist(x + eps, y) - get_signed_dist(x - eps, y)) / (2.0 * eps);
+        double dy = (get_signed_dist(x, y + eps) - get_signed_dist(x, y - eps)) / (2.0 * eps);
+
+        Eigen::Vector2d grad(dx, dy);
+        grad.normalize();
+
+        return {grad[0], grad[1]};
     }
 
     // define these functions with vectors so we can pybind them more easily
@@ -81,6 +145,7 @@ struct occupancy_grid
 
     unsigned int cells_to_index(unsigned int mx, unsigned int my) const
     {
+        /*std::cout << "[cells_to_index] mx: " << mx << " my: " << my << std::endl;*/
         if (mx > width || my > height)
             throw std::invalid_argument(
                 "[cells_to_index] mx or my is greater than width or height");
@@ -90,35 +155,64 @@ struct occupancy_grid
 
     unsigned char *get_data() const { return data; }
 
-    unsigned char get_cost(unsigned int mx, unsigned int my) const
-    {
-        return data[cells_to_index(mx, my)];
-    }
-
-    unsigned char get_cost(unsigned int index) const { return data[index]; }
-
-    bool is_occupied(double x, double y) const
+    unsigned char get_cost(double x, double y, const std::string &layer) const
     {
         std::vector<unsigned int> cells = world_to_map(x, y);
-        return is_occupied(cells[0], cells[1]);
+        return get_cost(cells[0], cells[1], layer);
     }
 
-    bool is_occupied(unsigned int mx, unsigned int my) const
+    unsigned char get_cost(unsigned int mx, unsigned int my, const std::string &layer) const
     {
-        return std::find(occupied_values.begin(), occupied_values.end(),
-                         data[cells_to_index(mx, my)]) != occupied_values.end();
+        return get_cost(cells_to_index(mx, my), layer);
     }
 
-    bool is_occupied(unsigned int index) const
+    double get_resolution() const { return resolution; }
+
+    std::vector<double> get_origin() const { return {origin_x, origin_y}; }
+
+    std::vector<int> get_size() const { return {width, height}; }
+
+    unsigned char get_cost(unsigned int index, const std::string &layer) const
     {
-        return std::find(occupied_values.begin(), occupied_values.end(), data[index]) !=
+        if (layer == "inflated")
+            return data[index];
+        else if (layer == "obstacles")
+        {
+            if (data[index] == costmap_2d::INSCRIBED_INFLATED_OBSTACLE) return 0;
+            return data[index];
+        }
+        else
+        {
+            std::string err = "[get_cost] layer not found: " + layer;
+            throw std::invalid_argument(err);
+        }
+
+        return data[index];
+    }
+
+    bool is_occupied(double x, double y, const std::string &layer) const
+    {
+        std::vector<unsigned int> cells = world_to_map(x, y);
+        return is_occupied(cells[0], cells[1], layer);
+    }
+
+    bool is_occupied(unsigned int mx, unsigned int my, const std::string &layer) const
+    {
+        return is_occupied(cells_to_index(mx, my), layer);
+    }
+
+    bool is_occupied(unsigned int index, const std::string &layer) const
+    {
+        unsigned char cost = get_cost(index, layer);
+        return std::find(occupied_values.begin(), occupied_values.end(), cost) !=
                occupied_values.end();
     }
 
-    void raycast(unsigned int sx, unsigned int sy, unsigned int ex, unsigned int ey, double &x,
+    bool raycast(unsigned int sx, unsigned int sy, unsigned int ex, unsigned int ey, double &x,
                  double &y, const std::vector<unsigned char> &test_val,
-                 unsigned int max_range = 1e6)
+                 const std::string &layer, unsigned int max_range = 1e6)
     {
+        bool ray_hit        = false;
         unsigned int size_x = width;
 
         int dx = ex - sx;
@@ -139,14 +233,14 @@ struct occupancy_grid
         if (abs_dx >= abs_dy)
         {
             int error_y = abs_dx / 2;
-            bresenham(abs_dx, abs_dy, error_y, offset_dx, offset_dy, offset,
-                      (unsigned int)(scale * abs_dx), term, test_val);
+            ray_hit     = bresenham(abs_dx, abs_dy, error_y, offset_dx, offset_dy, offset,
+                                    (unsigned int)(scale * abs_dx), term, layer, test_val);
         }
         else
         {
             int error_x = abs_dy / 2;
-            bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx, offset,
-                      (unsigned int)(scale * abs_dy), term, test_val);
+            ray_hit     = bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx, offset,
+                                    (unsigned int)(scale * abs_dy), term, layer, test_val);
         }
 
         // convert costmap index to world coordinates
@@ -158,14 +252,18 @@ struct occupancy_grid
         std::vector<double> world = map_to_world(mx, my);
         x                         = world[0];
         y                         = world[1];
+
+        return ray_hit;
     }
 
     // following bresenham / raycast method from
     // https://docs.ros.org/en/api/costmap_2d/html/costmap__2d_8h_source.html
-    void bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
+    bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b, int offset_a,
                    int offset_b, unsigned int offset, unsigned int max_range,
-                   unsigned int &term, const std::vector<unsigned char> &test_val)
+                   unsigned int &term, const std::string layer,
+                   const std::vector<unsigned char> &test_val)
     {
+        bool ray_hit     = false;
         unsigned int end = std::min(max_range, abs_da);
         unsigned int mx, my;
         for (unsigned int i = 0; i < end; ++i)
@@ -177,9 +275,10 @@ struct occupancy_grid
             mx                              = cells[0];
             my                              = cells[1];
 
-            unsigned char cost = get_cost(mx, my);
+            unsigned char cost = get_cost(mx, my, layer);
             if (std::find(test_val.begin(), test_val.end(), cost) != test_val.end())
             {
+                ray_hit = true;
                 break;
             }
 
@@ -193,31 +292,23 @@ struct occupancy_grid
             mx    = cells[0];
             my    = cells[1];
 
-            cost = get_cost(mx, my);
+            cost = get_cost(mx, my, layer);
             if (std::find(test_val.begin(), test_val.end(), cost) != test_val.end())
             {
+                ray_hit = true;
                 break;
             }
         }
 
         term = offset;
+        return ray_hit;
+    }
+
+    void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,
+                         int max_iters = 20)
+    {
     }
 };
-typedef struct occupancy_grid occupancy_grid_t;
-
-inline occupancy_grid_t costmap_to_occgrid(const costmap_2d::Costmap2D &costmap)
-{
-    int w                         = costmap.getSizeInCellsX();
-    int h                         = costmap.getSizeInCellsY();
-    double res                    = costmap.getResolution();
-    double ox                     = costmap.getOriginX();
-    double oy                     = costmap.getOriginY();
-    std::vector<unsigned char> ov = {costmap_2d::LETHAL_OBSTACLE,
-                                     costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
-
-    occupancy_grid_t occ_grid(w, h, res, ox, oy, costmap.getCharMap(), ov);
-
-    return occ_grid;
-}
+typedef OccupancyGrid occupancy_grid_t;
 
 }  // end namespace map_util

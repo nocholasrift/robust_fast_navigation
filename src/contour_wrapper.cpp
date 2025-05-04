@@ -1,6 +1,9 @@
 #include <robust_fast_navigation/contour_wrapper.h>
 
 #include <Eigen/Core>
+#include <cppad/core/testvector.hpp>
+
+#define ad_to_double(x) CppAD::Value(CppAD::Var2Par(x))
 
 ContourWrapper::ContourWrapper() {}
 
@@ -51,25 +54,32 @@ bool ContourWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& 
     solver_state initialState;
     solver_state finalState;
 
-    initialState.pos   = start.col(0);
-    initialState.vel   = start.col(1);
-    initialState.accel = start.col(2);
-    initialState.jerk  = start.col(3);
+    initialState.pos = start.col(0);
+    initialState.vel = start.col(1);
+    /*initialState.accel = start.col(2);*/
+    /*initialState.jerk  = start.col(3);*/
 
-    finalState.pos   = end.col(0);
-    finalState.vel   = end.col(1);
-    finalState.accel = end.col(2);
-    finalState.jerk  = end.col(3);
+    finalState.pos = end.col(0);
+    finalState.vel = end.col(1);
+    /*finalState.accel = end.col(2);*/
+    /*finalState.jerk  = end.col(3);*/
 
-    _solver.setStart(initialState);
-    _solver.setGoal(finalState);
+    _solver.setStart(start.col(0).head(2));
+    _solver.setGoal(end.col(0).head(2));
+    _solver.setSegments(polys.size());
+
+    // make polys 3d
+    std::vector<Eigen::MatrixX3d> newpolys;
+    for (const auto& poly : polys)
+    {
+        Eigen::MatrixX3d newpoly(poly.rows(), 3);
+        newpoly.leftCols(2) = poly.leftCols(2);
+        newpoly.col(2)      = -poly.col(3);
+        newpolys.push_back(newpoly);
+    }
 
     // set polygons
-    _solver.setPolytopes(polys);
-
-    _params.N_SEGMENTS = polys.size();
-
-    _solver.setup();
+    _solver.setPolys(newpolys);
 
     return true;
 }
@@ -77,7 +87,8 @@ bool ContourWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& 
 bool ContourWrapper::solve()
 {
     std::cout << "solvin traj" << std::endl;
-    bool success = _solver.optimize();
+    std::vector<double> x0 = _solver.warm_start();
+    bool success           = _solver.solve(x0);
 
     return success;
 }
@@ -85,27 +96,35 @@ bool ContourWrapper::solve()
 std::vector<rfn_state_t> ContourWrapper::get_trajectory()
 {
     std::cout << "getting trajectory" << std::endl;
-    double dt       = _params.SOLVER_TRAJ_DT;
-    double duration = _params.N_SEGMENTS;
+    double dt = _params.SOLVER_TRAJ_DT;
 
-    contour_solver::Contour contour = _solver.getContour();
+    PlanarTrajectory<CppAD::AD<double>, CPPAD_TESTVECTOR(CppAD::AD<double>)> contour =
+        _solver.getTraj();
 
+    double duration = ad_to_double(contour.getArcLen());
+
+    std::cout << "DURATION IS: " << duration << std::endl;
+    std::cout << "DT IS: " << dt << std::endl;
+
+    double t = 0.;
+    int n    = duration / dt;
     std::vector<rfn_state_t> ret;
-    ret.reserve(duration / dt);
-    for (double t = 0.; t < duration; t += dt)
+    ret.reserve(n);
+    for (int i = 0; i < n; ++i)
     {
-        contour_solver::GLEVec pos  = contour.getPos(t);
-        contour_solver::GLEVec vel  = contour.getVel(t);
-        contour_solver::GLEVec acc  = contour.getAcc(t);
-        contour_solver::GLEVec jerk = contour.getJerk(t);
+        t += dt;
+        auto pos = contour.getPos(t);
+        /*auto vel = contour.getVel(t);*/
+        /*auto acc = contour.getAcc(t);*/
 
         rfn_state_t& rfn_st = ret.emplace_back();
-        rfn_st.pos   = Eigen::Vector3d(pos[0].getValue(), pos[1].getValue(), pos[2].getValue());
-        rfn_st.vel   = Eigen::Vector3d(vel[0].getValue(), vel[1].getValue(), vel[2].getValue());
-        rfn_st.accel = Eigen::Vector3d(acc[0].getValue(), acc[1].getValue(), acc[2].getValue());
-        rfn_st.jerk =
-            Eigen::Vector3d(jerk[0].getValue(), jerk[1].getValue(), jerk[2].getValue());
-        rfn_st.t = t;
+        rfn_st.pos          = Eigen::Vector3d(ad_to_double(pos[0]), ad_to_double(pos[1]), 0);
+        rfn_st.vel          = Eigen::Vector3d::Zero();
+        rfn_st.accel        = Eigen::Vector3d::Zero();
+        rfn_st.jerk         = Eigen::Vector3d(0, 0, 0);
+        rfn_st.t            = t;
+
+        /*std::cout << t << "\t" << rfn_st.pos.transpose() << std::endl;*/
 
         /*std::cout << rfn_st.pos.transpose() << std::endl;*/
         /*for (int i = 0; i < 4; ++i)*/
@@ -121,10 +140,12 @@ std::vector<rfn_state_t> ContourWrapper::get_trajectory()
 
 double ContourWrapper::get_pos(double t, int dim)
 {
-    return _solver.getContour().getPos(t)[dim].getValue();
+    return ad_to_double(_solver.getTraj().getPos(t)[dim]);
 }
 
 double ContourWrapper::get_vel(double t, int dim)
 {
-    return _solver.getContour().getPos(t)[dim].getValue();
+    return ad_to_double(_solver.getTraj().getVel(t)[dim]);
 }
+
+double ContourWrapper::get_arclen() { return ad_to_double(_solver.getTraj().getArcLen()); }

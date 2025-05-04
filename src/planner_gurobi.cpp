@@ -16,8 +16,6 @@
 #include <vector>
 
 #include "costmap_2d/cost_values.h"
-#include "costmap_2d/inflation_layer.h"
-#include "costmap_2d/layered_costmap.h"
 #include "robust_fast_navigation/planner_core.h"
 #include "ros/console.h"
 
@@ -614,12 +612,15 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     /*}*/
 
     ros::Time start = ros::Time::now();
-    _occ_grid =
-        std::make_unique<map_util::occupancy_grid_t>(_grid_map, obs_layer, occ_vals, rad);
+    /*_occ_grid =*/
+    /*    std::make_unique<map_util::occupancy_grid_t>(_grid_map, obs_layer, occ_vals, rad);*/
+    /**/
+    _occ_grid = std::make_unique<map_util::occupancy_grid_t>(*_costmap->getCostmap());
 
+    std::vector<double> grad = _occ_grid->get_dist_grad(-2.1, 1.7);
     std::cout << "dist and grad @ (-2.0, 5.4) is ";
-    std::cout << _occ_grid->get_dist(-2.0, 5.4) << " "
-              << _occ_grid->get_dist_grad(-2.0, 5.4).transpose() << std::endl;
+    std::cout << _occ_grid->get_signed_dist(-2.1, 1.7) << "\t" << grad[0] << ", " << grad[1]
+              << std::endl;
 
     ROS_INFO("Occupancy grid created in %.4f seconds", (ros::Time::now() - start).toSec());
 
@@ -943,6 +944,7 @@ bool PlannerROS::plan(bool is_failsafe)
         for (rfn_state_t &x : arclen_traj)
         {
             // time from start is actually arc len in this case...
+            /*ROS_INFO("%.2f: x pos is: %.2f\t%.2f", x.t, x.pos(0), x.pos(1));*/
             trajectory_msgs::JointTrajectoryPoint p;
             p.positions.push_back(x.pos(0));
             p.positions.push_back(x.pos(1));

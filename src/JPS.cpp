@@ -609,8 +609,13 @@ void JPSPlan::set_map(const std::vector<unsigned char> &map, int sizeX, int size
 
 void JPSPlan::set_util(const map_util::occupancy_grid_t &map, const std::string &layer)
 {
-    _map_util = map;
-    _layer    = layer;
+    _map_util        = map;
+    this->sizeX      = map.get_size()[0];
+    this->sizeY      = map.get_size()[1];
+    this->originX    = map.get_origin()[0];
+    this->originY    = map.get_origin()[1];
+    this->resolution = map.get_resolution();
+    _layer           = layer;
 }
 
 /**********************************************************************

@@ -2,7 +2,7 @@
 
 /*#include <robust_fast_navigation/contour_solver.h>*/
 /*#include */
-#include <robust_fast_navigation/planar_ph.h>
+#include <robust_fast_navigation/ph_demo.h>
 #include <robust_fast_navigation/solver_base.h>
 
 class ContourWrapper : public SolverBase
@@ -19,6 +19,8 @@ class ContourWrapper : public SolverBase
     double get_vel(double t, int dim) override;
     void set_params(const planner_params_t& params) override;
 
+    double get_arclen();
+
    protected:
-    planar_ph::PHContourSolver _solver;
+    PHSolver _solver;
 };

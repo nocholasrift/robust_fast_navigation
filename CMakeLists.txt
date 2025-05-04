@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(robust_fast_navigation)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++17 -O3 -g)
+add_compile_options(-std=c++17 -O3)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -28,9 +28,12 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
+find_package(Ceres REQUIRED)
+# find_package(Glog REQUIRED)
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
+
 
 # Using GUROBI_LIBRARY on it's own isn't enough to get things to compile...
 # Snippet taken from https://github.com/mit-acl/faster/blob/master/faster/CMakeLists.txt
@@ -62,8 +65,9 @@ include_directories(
 add_executable(planner
     src/JPS.cpp
     src/solver.cpp 
+    src/ph_demo.cpp
     src/rfn_types.cpp
-    src/planar_ph.cpp
+    # src/planar_ph.cpp
     src/planner_core.cpp
     src/planner_gurobi.cpp 
     # src/contour_solver.cpp
@@ -76,14 +80,19 @@ target_link_libraries(planner
     ${catkin_LIBRARIES}
     ${GINAC_LIBRARIES}
     ${GUROBI_LIBRARIES}
-    Eigen3::Eigen
-)
-
-add_executable(ph_demo
-    src/ph_demo.cpp
-)
-target_link_libraries(ph_demo
-    ${catkin_LIBRARIES}
+    Ceres::ceres
     Eigen3::Eigen
     ipopt
 )
+
+# add_executable(ph_demo
+#     src/ph_demo.cpp
+# )
+# target_link_libraries(ph_demo
+#     ${catkin_LIBRARIES}
+#     # ${Ceres_LIBRARIES}
+#     ${Glog_LIBRARIES}
+#     Ceres::ceres
+#     Eigen3::Eigen
+#     ipopt
+# )

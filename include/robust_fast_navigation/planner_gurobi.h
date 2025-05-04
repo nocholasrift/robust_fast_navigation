@@ -11,7 +11,8 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
-#include <robust_fast_navigation/grid_map_util.h>
+/*#include <robust_fast_navigation/grid_map_util.h>*/
+#include <robust_fast_navigation/map_util.h>
 #include <robust_fast_navigation/planner_core.h>
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>

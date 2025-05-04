@@ -1,6 +1,7 @@
 #pragma once
 
-#include <robust_fast_navigation/grid_map_util.h>
+/*#include <robust_fast_navigation/grid_map_util.h>*/
+#include <robust_fast_navigation/map_util.h>
 
 #include <gcopter/firi.hpp>
 #include <gcopter/geo_utils.hpp>
@@ -128,6 +129,9 @@ inline std::vector<Eigen::Vector2d> getOccupied(const map_util::occupancy_grid_t
     {
         for (unsigned int j = 0; j < height; j++)
         {
+            /*unsigned int index = occ_grid.cells_to_index(i, j);*/
+            /*if (occ_grid.data[index] == costmap_2d::LETHAL_OBSTACLE)*/
+            /*    std::cout << "FOUND INFLATED OBSTACLE" << std::endl;*/
             if (occ_grid.is_occupied(i, j, "inflated"))
             {
                 unsigned int mx, my;
@@ -306,14 +310,14 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
         {
             if (isInPoly(poly, Eigen::Vector2d(ob(0), ob(1))))
             {
-                std::cout << "val: " << _map._map.atPosition("obstacles", ob.head(2))
-                          << std::endl;
-                std::cout << "cost at " << ob.transpose() << " is "
-                          << static_cast<int>(_map.get_cost(ob(0), ob(1), "obstacles"))
-                          << std::endl;
-
-                std::cout << "[Corridor] Obstacle in corridor, generation failed!!!"
-                          << std::endl;
+                /*std::cout << "val: " << _map._map.atPosition("obstacles", ob.head(2))*/
+                /*          << std::endl;*/
+                /*std::cout << "cost at " << ob.transpose() << " is "*/
+                /*          << static_cast<int>(_map.get_cost(ob(0), ob(1), "obstacles"))*/
+                /*          << std::endl;*/
+                /**/
+                /*std::cout << "[Corridor] Obstacle in corridor, generation failed!!!"*/
+                /*          << std::endl;*/
                 return false;
             }
         }

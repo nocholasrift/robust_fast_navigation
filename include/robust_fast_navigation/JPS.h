@@ -1,12 +1,12 @@
 #pragma once
 
+#include <robust_fast_navigation/map_util.h>
+
 #include <Eigen/Core>
 #include <queue>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include "robust_fast_navigation/grid_map_util.h"
 
 #define IN_OCCUPIED_SPACE 1
 
