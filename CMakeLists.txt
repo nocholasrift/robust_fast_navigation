@@ -28,8 +28,22 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-find_package(Ceres REQUIRED)
-# find_package(Glog REQUIRED)
+find_package(Ceres QUIET)
+if (Ceres_FOUND)
+  list(APPEND PLANNER_SRCS
+    src/ph_demo.cpp
+    src/contour_wrapper.cpp
+  )
+  list(APPEND PLANNER_LIBS
+      Ceres::ceres
+  )
+
+  add_definitions(-DCERES_FOUND)
+else()
+  message(STATUS "Ceres found, adding Ceres-related code.")
+  find_package(Ceres REQUIRED)
+endif()
+
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
@@ -62,27 +76,30 @@ include_directories(
   ${GINAC_INCLUDE_DIRS}
 )
 
-add_executable(planner
-    src/JPS.cpp
-    src/solver.cpp 
-    src/ph_demo.cpp
-    src/rfn_types.cpp
-    # src/planar_ph.cpp
-    src/planner_core.cpp
-    src/planner_gurobi.cpp 
-    # src/contour_solver.cpp
-    src/faster_wrapper.cpp
-    src/gcopter_wrapper.cpp
-    src/contour_wrapper.cpp
-    src/planner_gurobi_node.cpp 
+list(APPEND PLANNER_SRCS
+  src/JPS.cpp
+  src/solver.cpp 
+  src/rfn_types.cpp
+  src/planner_core.cpp
+  src/planner_gurobi.cpp 
+  src/faster_wrapper.cpp
+  src/gcopter_wrapper.cpp
+  src/planner_gurobi_node.cpp 
 )
-target_link_libraries(planner
+list(APPEND PLANNER_LIBS
     ${catkin_LIBRARIES}
     ${GINAC_LIBRARIES}
     ${GUROBI_LIBRARIES}
     Ceres::ceres
     Eigen3::Eigen
     ipopt
+)
+
+add_executable(planner
+  ${PLANNER_SRCS}
+)
+target_link_libraries(planner
+  ${PLANNER_LIBS}
 )
 
 # add_executable(ph_demo

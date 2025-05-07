@@ -4,7 +4,9 @@
 #include <memory>
 
 #include "costmap_2d/cost_values.h"
+#ifdef CERES_FOUND
 #include "robust_fast_navigation/contour_wrapper.h"
+#endif
 #include "robust_fast_navigation/faster_wrapper.h"
 #include "robust_fast_navigation/gcopter_wrapper.h"
 #include "robust_fast_navigation/solver_base.h"
@@ -32,13 +34,14 @@ void Planner::set_params(const planner_params_t &params)
         _solver = std::make_unique<FasterWrapper>();
     else if (_params.SOLVER == "gcopter")
         _solver = std::make_unique<GcopterWrapper>();
+#ifdef CERES_FOUND
     else if (_params.SOLVER == "contour")
         _solver = std::make_unique<ContourWrapper>();
+#endif
     else
     {
         std::cout << termcolor::red << "[Planner Core] Solver param value '" << _params.SOLVER
-                  << "' not recognized! Set to either 'faster' or 'gcopter'" << termcolor::reset
-                  << std::endl;
+                  << "' not recognized!" << termcolor::reset << std::endl;
         exit(-1);
     }
 
@@ -312,11 +315,13 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
         return TRAJ_GEN_FAIL;
     }
 
+#if CERES_FOUND
     if (_params.SOLVER == "contour")
     {
         ContourWrapper *contour_solver = dynamic_cast<ContourWrapper *>(_solver.get());
         contour_solver->set_map(_map);
     }
+#endif
 
     // time trajectory generation
     ros::Time start_solve = ros::Time::now();
@@ -547,6 +552,7 @@ bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
     xs.resize(M + 1);
     ys.resize(M + 1);
 
+#ifdef CERES_FOUND
     if (_params.SOLVER == "contour")
     {
         // cast to contour solver
@@ -561,6 +567,7 @@ bool Planner::reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
 
         return true;
     }
+#endif
 
     double previous_ti = 0;
     for (int i = 0; i <= M; ++i)
