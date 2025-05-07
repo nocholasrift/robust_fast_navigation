@@ -3,6 +3,7 @@
 /*#include <robust_fast_navigation/grid_map_util.h>*/
 #include <robust_fast_navigation/map_util.h>
 
+#include <chrono>
 #include <gcopter/firi.hpp>
 #include <gcopter/geo_utils.hpp>
 // #include <grid_map_ros/GridMapRosConverter.hpp>
@@ -25,8 +26,8 @@
 
 namespace corridor
 {
-inline bool convexCover(const std::vector<Eigen::Vector3d> &path,
-                        const std::vector<Eigen::Vector3d> &points,
+inline bool convexCover(const std::vector<Eigen::VectorXd> &path,
+                        const std::vector<Eigen::VectorXd> &points,
                         const Eigen::Vector3d &lowCorner, const Eigen::Vector3d &highCorner,
                         const double &progress, const double &range,
                         std::vector<Eigen::MatrixX4d> &hpolys, const double eps = 1.0e-6)
@@ -204,14 +205,98 @@ inline bool isInPoly(const Eigen::MatrixX4d &poly, const Eigen::Vector2d &p)
     return true;
 }
 
+inline void shrinkPolytopes(std::vector<Eigen::MatrixX4d> &hpolys,
+                            const Eigen::MatrixXd &initialPVAJ,
+                            const Eigen::MatrixXd &finalPVAJ, double shrinkAmount)
+{
+    int N            = 5;
+    double step_size = shrinkAmount / N;
+    int k            = 0;
+    for (auto &poly : hpolys)
+    {
+        int numHalfPlanes = poly.rows();  // Get the number of half-planes (rows in the matrix)
+
+        // Loop through each half-plane
+        for (int i = 0; i < numHalfPlanes; ++i)
+        {
+            // Calculate the magnitude of the normal vector
+            Eigen::Vector2d normal = poly.row(i).head<2>();
+            normal.normalize();
+            for (int j = 0; j < N; ++j)
+            {
+                // Shrink the polytope by adjusting the offset
+                // Subtract shrinkAmount scaled by the magnitude of the normal vector
+                poly(i, 3) += step_size;
+
+                // check if overlap with next halfplane
+                if (k < hpolys.size() - 1 && !geo_utils::overlap(poly, hpolys[k + 1]))
+                {
+                    poly(i, 3) -= step_size;
+                    break;
+                }
+                if (k > 0 && !geo_utils::overlap(poly, hpolys[k - 1]))
+                {
+                    poly(i, 3) -= step_size;
+                    break;
+                }
+                if (k == 0 &&
+                    !isInPoly(poly, Eigen::Vector2d(initialPVAJ(0, 0), initialPVAJ(1, 0))))
+                {
+                    poly(i, 3) -= step_size;
+                    break;
+                }
+                if (k == hpolys.size() - 1 &&
+                    !isInPoly(poly, Eigen::Vector2d(finalPVAJ(0, 0), finalPVAJ(1, 0))))
+                {
+                    poly(i, 3) -= step_size;
+                    break;
+                }
+            }
+        }
+
+        k++;
+    }
+}
+
+/*inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys)*/
+/*{*/
+/*    std::vector<Eigen::MatrixX4d> htemp = hpolys;*/
+/*    if (htemp.size() == 1) return;*/
+/**/
+/*    hpolys.clear();*/
+/*    std::deque<int> indices;*/
+/*    int M = htemp.size();*/
+/**/
+/*    indices.push_front(M - 1);*/
+/*    int i = M - 1;*/
+/*    while (i >= 0)*/
+/*    {*/
+/*        bool found = false;*/
+/*        for (int j = 0; j < i; j++)*/
+/*        {*/
+/*            if (geo_utils::overlap(htemp[i], htemp[j], 0.01))*/
+/*            {*/
+/*                indices.push_front(j);*/
+/*                i     = j;*/
+/*                found = true;*/
+/*                break;*/
+/*            }*/
+/*        }*/
+/*        if (!found) --i;*/
+/*    }*/
+/**/
+/*    for (const auto &idx : indices) hpolys.push_back(htemp[idx]);*/
+/*}*/
+
 inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys)
 {
     std::vector<Eigen::MatrixX4d> htemp = hpolys;
-    if (htemp.size() == 1)
-    {
-        Eigen::MatrixX4d headPoly = htemp.front();
-        htemp.insert(htemp.begin(), headPoly);
-    }
+    if (htemp.size() == 1) return;
+    /*if (htemp.size() == 1)*/
+    /*{*/
+    /*    Eigen::MatrixX4d headPoly = htemp.front();*/
+    /*    htemp.insert(htemp.begin(), headPoly);*/
+    /*}*/
     hpolys.clear();
 
     int M = htemp.size();
@@ -251,19 +336,26 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
                               const Eigen::MatrixXd &initialPVAJ,
                               const Eigen::MatrixXd &finalPVAJ)
 {
-    static std::vector<Eigen::Vector3d> prev_obs;
+    static std::vector<Eigen::VectorXd> prev_obs;
 
     polys.clear();
-    std::vector<Eigen::Vector3d> path3d, obs3d;
+    std::vector<Eigen::VectorXd> path3d, obs3d;
     for (Eigen::Vector2d p : path)
     {
         path3d.push_back(Eigen::Vector3d(p[0], p[1], 0));
     }
 
-    for (Eigen::Vector2d ob : getOccupied(_map))
-    {
-        obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
-    }
+    auto start = std::chrono::high_resolution_clock::now();
+    /*for (Eigen::Vector2d ob : getOccupied(_map))*/
+    /*{*/
+    /*    obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));*/
+    /*}*/
+    obs3d = _map.get_occupied(3);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::cout << "getOccupied took "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << "ms" << std::endl;
 
     if (prev_obs.size() > 0 && obs3d.size() == 0)
     {
@@ -285,11 +377,15 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
     if (!status) return false;
 
     shortCut(polys);
+    /*shrinkPolytopes(polys, initialPVAJ, finalPVAJ, .2);*/
+
+    std::cout << "POLYS IN CORRIDOR GENERATOR HAS SIZE: " << polys.size() << std::endl;
+    /*std::cout << "norm is: " << (polys[0] - polys[1]).norm() << std::endl;*/
 
     if (!isInPoly(polys[0], Eigen::Vector2d(initialPVAJ(0, 0), initialPVAJ(1, 0))))
     {
         std::cout << "[Corridor] Start was not in poly, adding extra polygon to correct this\n";
-        std::vector<Eigen::Vector3d> poses = {initialPVAJ.col(0), initialPVAJ.col(0)};
+        std::vector<Eigen::VectorXd> poses = {initialPVAJ.col(0), initialPVAJ.col(0)};
         std::vector<Eigen::MatrixX4d> tmp;
         status = convexCover(poses, obs3d, Eigen::Vector3d(x, y, -.1),
                              Eigen::Vector3d(x + w, y + h, .1), .1, 5.0, tmp);
@@ -299,6 +395,11 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
     if (!isInPoly(polys.back(), Eigen::Vector2d(finalPVAJ(0, 0), finalPVAJ(1, 0))))
     {
         std::cout << "[Corridor] End was not in poly, adding extra polygon to correct this\n";
+        std::vector<Eigen::VectorXd> poses = {finalPVAJ.col(0), finalPVAJ.col(0)};
+        std::vector<Eigen::MatrixX4d> tmp;
+        status = convexCover(poses, obs3d, Eigen::Vector3d(x, y, -.1),
+                             Eigen::Vector3d(x + w, y + h, .1), .1, 5.0, tmp);
+        if (status) polys.insert(polys.end(), tmp[0]);
     }
 
     // check if obstacles are inside the corridor

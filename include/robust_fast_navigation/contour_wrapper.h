@@ -2,6 +2,7 @@
 
 /*#include <robust_fast_navigation/contour_solver.h>*/
 /*#include */
+#include <robust_fast_navigation/map_util.h>
 #include <robust_fast_navigation/ph_demo.h>
 #include <robust_fast_navigation/solver_base.h>
 
@@ -18,6 +19,7 @@ class ContourWrapper : public SolverBase
     double get_pos(double t, int dim) override;
     double get_vel(double t, int dim) override;
     void set_params(const planner_params_t& params) override;
+    void set_map(const map_util::occupancy_grid_t& map);
 
     double get_arclen();
 

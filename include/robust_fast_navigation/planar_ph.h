@@ -2,6 +2,7 @@
 
 #include <robust_fast_navigation/rfn_types.h>
 
+#include <cppad/example/cppad_eigen.hpp>
 #include <vector>
 
 #define U0_IND 0
@@ -24,6 +25,10 @@ class PlanarPH
     using Vec3  = Eigen::Matrix<T, 3, 1>;
     using VecX  = Eigen::Matrix<T, Eigen::Dynamic, 1>;
     using MatX3 = Eigen::Matrix<T, Eigen::Dynamic, 3>;
+    /*using Vec2 = CppAD::eigen_vector<T>;*/
+    /*using Vec3  = Eigen::Matrix<T, 3, 1>;*/
+    /*using VecX  = Eigen::Matrix<T, Eigen::Dynamic, 1>;*/
+    /*using MatX3 = Eigen::Matrix<T, Eigen::Dynamic, 3>;*/
 
     PlanarPH()
     {
@@ -183,6 +188,14 @@ class PlanarPH
 
     static Vec2 getPos(const U &x, const Vec2 &start, T t)
     {
+        std::array<Vec2, 6> ctrl_pts;
+        ctrl_pts[0] = start;
+        ctrl_pts[1] = getP1(x, start);
+        ctrl_pts[2] = getP2(x, start);
+        ctrl_pts[3] = getP3(x, start);
+        ctrl_pts[4] = getP4(x, start);
+        ctrl_pts[5] = getP5(x, start);
+
         Vec2 pos(0., 0.);
         std::array<T, 6> mt_pows_;
         mt_pows_[0] = T(1.);
@@ -191,9 +204,11 @@ class PlanarPH
         T t_pow(1.);
         for (int i = 0; i <= 5; ++i)
         {
-            pos += getPX(x, start, i) * binom5_[i] * mt_pows_[5 - i] * t_pow;
+            pos += ctrl_pts[i] * binom5_[i] * mt_pows_[5 - i] * t_pow;
             t_pow *= t;
         }
+
+        /*std::cout << pos[0] << ", " << pos[1] << std::endl;*/
 
         return pos;
     }
@@ -621,10 +636,10 @@ struct GoalContResidual
         Vec2 start = start_.cast<T>();
         Vec2 goal  = goal_.cast<T>();
         Vec2 end   = PlanarPHd::getP5(std::vector<T>(xs[0], xs[0] + 6), start);
-        for (int i = 0; i < n_segments_; ++i)
+        for (int i = 1; i < n_segments_; ++i)
             end = PlanarPHd::getP5(std::vector<T>(xs[0] + 6 * i, xs[0] + 6 * (i + 1)), end);
 
-        Vec2 diff = end - goal;
+        Vec2 diff = (end - goal);
 
         residuals[0] = diff[0];
         residuals[1] = diff[1];
@@ -778,12 +793,12 @@ struct PolytopeResidualInterior
                 Vec2 ai(T(polys_[i](j, 0)), T(polys_[i](j, 1)));
                 T bi = T(polys_[i](j, 2));
 
-                residuals[idx++] = ai.dot(start) - bi;
-                residuals[idx++] = ai.dot(PlanarPHd::getP1(x, start)) - bi;
-                residuals[idx++] = ai.dot(PlanarPHd::getP2(x, start)) - bi;
-                residuals[idx++] = ai.dot(PlanarPHd::getP3(x, start)) - bi;
-                residuals[idx++] = ai.dot(PlanarPHd::getP4(x, start)) - bi;
-                residuals[idx++] = ai.dot(PlanarPHd::getP5(x, start)) - bi;
+                residuals[idx++] = T(0.05) * (ai.dot(start) - bi);
+                residuals[idx++] = T(0.05) * (ai.dot(PlanarPHd::getP1(x, start)) - bi);
+                residuals[idx++] = T(0.05) * (ai.dot(PlanarPHd::getP2(x, start)) - bi);
+                residuals[idx++] = T(0.05) * (ai.dot(PlanarPHd::getP3(x, start)) - bi);
+                residuals[idx++] = T(0.05) * (ai.dot(PlanarPHd::getP4(x, start)) - bi);
+                residuals[idx++] = T(0.05) * (ai.dot(PlanarPHd::getP5(x, start)) - bi);
             }
 
             start = PlanarPHd::getP5(x, start);
@@ -798,13 +813,3 @@ struct PolytopeResidualInterior
     Eigen::Vector2d start_;
     std::vector<Eigen::MatrixX3d> polys_;
 };
-
-template <typename U, typename T>
-T goalResidual(const PlanarPH<T, U> &ph, const U &x1)
-{
-    using Vec2 = Eigen::Matrix<T, 2, 1>;
-
-    Vec2 goal = ph.getGoal();
-    Vec2 p5   = ph.getP5(x1);
-    return (goal - p5).dot(goal - p5);
-}

@@ -40,7 +40,7 @@ plugins:
 #   scan: {sensor_frame: front_laser, data_type: LaserScan, topic: /front/scan, marking: true, clearing: true, min_obstacle_height: -2.0, max_obstacle_height: 2.0, obstacle_range: 6, raytrace_range: 6.0}
 
 inflater_layer:
- inflation_radius: 0.0
+ inflation_radius: 0.33
  cost_scaling_factor: 0.3
 
 static_layer:

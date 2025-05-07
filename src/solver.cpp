@@ -568,6 +568,7 @@ void SolverGurobi::setOcclusionConstraint()
 bool SolverGurobi::genNewTraj()
 {
     bool solved = false;
+    std::cout << "[Solver Gurobi] Generating new trajectory" << std::endl;
 
     trials_ = 0;
 
@@ -591,7 +592,7 @@ bool SolverGurobi::genNewTraj()
         {
             std::cout << red
                       << "SolverGurobi::genNewTraj() - Solver took too long, returning false"
-                      << std::endl;
+                      << runtime_s_ << " > " << max_solver_time << reset << std::endl;
             return false;
         }
 
@@ -599,6 +600,7 @@ bool SolverGurobi::genNewTraj()
         // the entire process should be less than max_solver_time
         cb_.set_timeout(max_solver_time - runtime_s_);
         m.setCallback(&cb_);
+        m.set(GRB_DoubleParam_TimeLimit, max_solver_time - runtime_s_);
         // std::cout << "timeout time is " << max_solver_time-runtime_s_ << std::endl;
 
         trials_ = trials_ + 1;
@@ -615,8 +617,22 @@ bool SolverGurobi::genNewTraj()
         setObjective();
         resetX();
 
-        // std::cout << "solving now!" << std::endl;
-        solved = callOptimizer();
+        std::cout << "solving now!" << std::endl;
+        try
+        {
+            solved = callOptimizer();
+        }
+        catch (GRBException e)
+        {
+            std::cout << "Gurobi exception: " << e.getMessage() << std::endl;
+            solved = false;
+            exit(1);
+        }
+        catch (...)
+        {
+            std::cout << "Unknown exception" << std::endl;
+            solved = false;
+        }
         // std::cout << "finished solving" << std::endl;
         /*    if (solved == true)
             {

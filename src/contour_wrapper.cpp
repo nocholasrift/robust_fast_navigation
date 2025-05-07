@@ -47,6 +47,8 @@ void ContourWrapper::set_params(const planner_params_t& params)
     _params = params;
 }
 
+void ContourWrapper::set_map(const map_util::occupancy_grid_t& map) { _solver.setMap(map); }
+
 bool ContourWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& end,
                            const std::vector<Eigen::MatrixX4d>& polys)
 {
@@ -65,8 +67,13 @@ bool ContourWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& 
     /*finalState.jerk  = end.col(3);*/
 
     _solver.setStart(start.col(0).head(2));
+
+    if (start.col(1).head(2).norm() > 1e-3) _solver.setVel(start.col(1).head(2));
+
     _solver.setGoal(end.col(0).head(2));
     _solver.setSegments(polys.size());
+
+    std::cout << "POLY SIZE IS: " << polys.size() << std::endl;
 
     // make polys 3d
     std::vector<Eigen::MatrixX3d> newpolys;
@@ -114,14 +121,14 @@ std::vector<rfn_state_t> ContourWrapper::get_trajectory()
     {
         t += dt;
         auto pos = contour.getPos(t);
-        /*auto vel = contour.getVel(t);*/
+        auto vel = contour.getVel(t);
         /*auto acc = contour.getAcc(t);*/
 
         rfn_state_t& rfn_st = ret.emplace_back();
         rfn_st.pos          = Eigen::Vector3d(ad_to_double(pos[0]), ad_to_double(pos[1]), 0);
-        rfn_st.vel          = Eigen::Vector3d::Zero();
+        rfn_st.vel          = Eigen::Vector3d(ad_to_double(vel[0]), ad_to_double(vel[1]), 0);
         rfn_st.accel        = Eigen::Vector3d::Zero();
-        rfn_st.jerk         = Eigen::Vector3d(0, 0, 0);
+        rfn_st.jerk         = Eigen::Vector3d::Zero();
         rfn_st.t            = t;
 
         /*std::cout << t << "\t" << rfn_st.pos.transpose() << std::endl;*/

@@ -5,9 +5,7 @@
 #include <robust_fast_navigation/contour_solver.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/faster_wrapper.h>
-/*#include <robust_fast_navigation/grid_map_util.h>*/
 #include <robust_fast_navigation/map_util.h>
-/*#include <robust_fast_navigation/ipopt_grad.h>*/
 #include <robust_fast_navigation/spline.h>
 
 class SplineWrapper

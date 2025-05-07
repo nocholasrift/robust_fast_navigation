@@ -50,6 +50,7 @@ class PlannerROS
     void mpcHorizoncb(const trajectory_msgs::JointTrajectory::ConstPtr &msg);
 
     // timers
+    void safetyLoop(const ros::TimerEvent &);
     void goalLoop(const ros::TimerEvent &);
     void controlLoop(const ros::TimerEvent &);
     void publishOccupied(const ros::TimerEvent &);
@@ -63,6 +64,7 @@ class PlannerROS
     Eigen::VectorXd _vel;
     Eigen::VectorXd goal;
 
+    bool _mpc_backwards;
     bool _use_arclen;
     bool _is_init;
     bool _use_global_costmap;
@@ -96,10 +98,11 @@ class PlannerROS
     planner_params_t _planner_params;
 
     ros::Time start, state_transition_start_t;
-    ros::Timer controlTimer, goalTimer, publishTimer;
+    ros::Timer controlTimer, goalTimer, publishTimer, safetyTimer;
 
     // Services
     ros::ServiceClient estop_client;
+    ros::ServiceClient _mpc_backup_client;
 
     // Subscribers
     ros::Subscriber mapSub;
