@@ -61,8 +61,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/solver_traj_dt", _solver_traj_dt, .05);
     nh.param("robust_planner/factor_increment", _factor_increment, 1.0);
     nh.param("robust_planner/force_final_const", _force_final_const, true);
-
-    nh.param("robust_planner/init_inflation_val", _inflate_radius, 0.0);
+    nh.param("robust_planner/min_turn_clearance", _min_turn_clearance, 0.1);
 
     // params
     _planner_params.SOLVER = _solver_str;
@@ -126,7 +125,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     pathSub = nh.subscribe("/global_planner/planner/plan", 1, &PlannerROS::globalPathcb, this);
 
     // Timers
-    safetyTimer  = nh.createTimer(.1, &PlannerROS::safetyLoop, this);
+    /*safetyTimer  = nh.createTimer(ros::Duration(.1), &PlannerROS::safetyLoop, this);*/
     goalTimer    = nh.createTimer(ros::Duration(_dt / 2.0), &PlannerROS::goalLoop, this);
     controlTimer = nh.createTimer(ros::Duration(_dt), &PlannerROS::controlLoop, this);
     publishTimer = nh.createTimer(ros::Duration(_dt * 2), &PlannerROS::publishOccupied, this);
@@ -564,13 +563,6 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     std::vector<unsigned char> occ_vals = {costmap_2d::LETHAL_OBSTACLE,
                                            costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
 
-    double rad = _inflate_radius;
-    /*if (count >= _failsafe_count && _prev_plan_status == START_IN_OBSTACLE &&*/
-    /*    _is_grid_map_started)*/
-    /*{*/
-    /*    rad = .5 * _inflate_radius;*/
-    /*}*/
-
     ros::Time start = ros::Time::now();
     /*_occ_grid =*/
     /*    std::make_unique<map_util::occupancy_grid_t>(_grid_map, obs_layer, occ_vals, rad);*/
@@ -595,8 +587,8 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
         double e = atan2(sin(traj_theta - _odom(2)), cos(traj_theta - _odom(2)));
 
         // use mpc reverse mode if no space to turn around
-        double dist = 0.2;
-        if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) >= dist && _mpc_backwards)
+        if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) >= _min_turn_clearance &&
+            _mpc_backwards)
         {
             std_srvs::Empty srv;
             if (_mpc_backup_client.call(srv))
@@ -869,7 +861,7 @@ bool PlannerROS::plan(bool is_failsafe)
             sentTraj.points.push_back(p);
         }
 
-        visualizeTraj();
+        /*visualizeTraj();*/
 
         if (!_is_teleop) trajPub.publish(sentTraj);
         return false;
@@ -1018,9 +1010,8 @@ bool PlannerROS::plan(bool is_failsafe)
         double e = atan2(sin(traj_theta - _odom(2)), cos(traj_theta - _odom(2)));
 
         // use mpc reverse mode if no space to turn around
-        double dist = 0.2;
-        if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) < dist && fabs(e) > M_PI / 2.0 &&
-            !_mpc_backwards)
+        if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) < _min_turn_clearance &&
+            fabs(e) > M_PI / 2.0 && !_mpc_backwards)
         {
             ROS_WARN("MPC reverse mode engaged!");
             std_srvs::Empty srv;
@@ -1036,7 +1027,7 @@ bool PlannerROS::plan(bool is_failsafe)
 
     if (!_is_teleop) trajPub.publish(sentTraj);
 
-    visualizeTraj();
+    /*visualizeTraj();*/
     publishCPS();
 
     _planned = true;
@@ -1072,7 +1063,7 @@ void PlannerROS::safetyLoop(const ros::TimerEvent &)
         sentTraj.points.push_back(p);
     }
 
-    visualizeTraj();
+    /*visualizeTraj();*/
 
     if (!_is_teleop) trajPub.publish(sentTraj);
 }

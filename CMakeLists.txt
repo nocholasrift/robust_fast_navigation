@@ -36,6 +36,7 @@ if (Ceres_FOUND)
   )
   list(APPEND PLANNER_LIBS
       Ceres::ceres
+      ipopt
   )
 
   add_definitions(-DCERES_FOUND)
@@ -92,7 +93,6 @@ list(APPEND PLANNER_LIBS
     ${GUROBI_LIBRARIES}
     Ceres::ceres
     Eigen3::Eigen
-    ipopt
 )
 
 add_executable(planner
@@ -102,14 +102,10 @@ target_link_libraries(planner
   ${PLANNER_LIBS}
 )
 
-# add_executable(ph_demo
-#     src/ph_demo.cpp
-# )
-# target_link_libraries(ph_demo
-#     ${catkin_LIBRARIES}
-#     # ${Ceres_LIBRARIES}
-#     ${Glog_LIBRARIES}
-#     Ceres::ceres
-#     Eigen3::Eigen
-#     ipopt
-# )
+add_executable(safety_node
+    src/safety_node.cpp
+)
+target_link_libraries(safety_node
+    ${catkin_LIBRARIES}
+    Eigen3::Eigen
+)

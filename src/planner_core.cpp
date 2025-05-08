@@ -372,7 +372,7 @@ std::vector<rfn_state_t> Planner::get_trajectory()
     {
         Eigen::Vector2d pos = _traj[i].pos.head(2);
         if (_map.is_occupied(pos[0], pos[1], "inflated") &&
-            _map.get_signed_dist(pos[0], pos[1]) < -_map.get_resolution() / 4)
+            _map.get_signed_dist(pos[0], pos[1]) < -_map.get_resolution())
         {
             sz = i - 1;
             std::cout << termcolor::red << "[Planner Core] Trajectory overlaps obstacle, "

@@ -179,6 +179,7 @@ class PlannerROS
     double _max_solve_time;
 
     double _inflate_radius;
+    double _min_turn_clearance;
 
     int _n_polys;
     int _n_threads;

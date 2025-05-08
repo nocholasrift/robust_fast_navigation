@@ -26,6 +26,7 @@ class OccupancyGrid
     double origin_y;
 
     bool resized;
+    bool use_sdf;
 
     std::vector<unsigned char> occupied_values;
 
@@ -45,6 +46,7 @@ class OccupancyGrid
         data       = nullptr;
 
         resized = false;
+        use_sdf = false;
     }
 
     OccupancyGrid(int w, int h, double res, double ox, double oy, unsigned char *d,
@@ -60,10 +62,11 @@ class OccupancyGrid
 
         update_occupied_obstacles();
 
-        resized = false;
+        resized       = false;
+        this->use_sdf = false;
     }
 
-    OccupancyGrid(const costmap_2d::Costmap2D &costmap)
+    OccupancyGrid(const costmap_2d::Costmap2D &costmap, bool use_sdf = true)
     {
         width           = costmap.getSizeInCellsX();
         height          = costmap.getSizeInCellsY();
@@ -76,14 +79,8 @@ class OccupancyGrid
 
         update_occupied_obstacles();
 
-        Eigen::Matrix<unsigned char, -1, -1, Eigen::RowMajor> cost_mat(height, width);
-        memcpy(cost_mat.data(), data, width * height * sizeof(unsigned char));
-        Eigen::Matrix<bool, -1, -1, Eigen::RowMajor> binary_map =
-            cost_mat.array() >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
-
-        _sdf =
-            grid_map::signed_distance_field::signedDistanceFromOccupancy(binary_map, resolution)
-                .cast<double>();
+        this->use_sdf = use_sdf;
+        if (use_sdf) generate_sdf();
     }
 
     void update(const costmap_2d::Costmap2D &costmap)
@@ -112,25 +109,46 @@ class OccupancyGrid
         auto start = std::chrono::high_resolution_clock::now();
         Eigen::Matrix<bool, -1, -1, Eigen::RowMajor> binary_map =
             cost_mat.array() >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
-        std::cout << "[OccupancyGrid] bitmap took "
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::high_resolution_clock::now() - start)
-                         .count()
-                  << "ms" << std::endl;
+        /*std::cout << "[OccupancyGrid] bitmap took "*/
+        /*          << std::chrono::duration_cast<std::chrono::milliseconds>(*/
+        /*                 std::chrono::high_resolution_clock::now() - start)*/
+        /*                 .count()*/
+        /*          << "ms" << std::endl;*/
 
         start = std::chrono::high_resolution_clock::now();
+        if (use_sdf)
+            _sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(binary_map,
+                                                                                resolution)
+                       .cast<double>();
+
+        /*std::cout << "[OccupancyGrid] sdf took "*/
+        /*          << std::chrono::duration_cast<std::chrono::milliseconds>(*/
+        /*                 std::chrono::high_resolution_clock::now() - start)*/
+        /*                 .count()*/
+        /*          << "ms" << std::endl;*/
+    }
+
+    void generate_sdf()
+    {
+        Eigen::Matrix<unsigned char, -1, -1, Eigen::RowMajor> cost_mat(height, width);
+        memcpy(cost_mat.data(), data, width * height * sizeof(unsigned char));
+        Eigen::Matrix<bool, -1, -1, Eigen::RowMajor> binary_map =
+            cost_mat.array() >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
+
         _sdf =
             grid_map::signed_distance_field::signedDistanceFromOccupancy(binary_map, resolution)
                 .cast<double>();
-        std::cout << "[OccupancyGrid] sdf took "
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::high_resolution_clock::now() - start)
-                         .count()
-                  << "ms" << std::endl;
+
+        // in case user manually calls this
+        this->use_sdf = true;
     }
 
     double get_signed_dist(double x, double y) const
     {
+        if (!use_sdf)
+            throw std::invalid_argument(
+                "[get_signed_distance] SDF not generated, use_sdf is false");
+
         std::vector<unsigned int> cells = world_to_map(x, y);
         unsigned int mx                 = cells[0];
         unsigned int my                 = cells[1];
@@ -146,6 +164,10 @@ class OccupancyGrid
 
     std::vector<double> get_dist_grad(double x, double y) const
     {
+        if (!use_sdf)
+            throw std::invalid_argument(
+                "[get_signed_distance] SDF not generated, use_sdf is false");
+
         const double eps = resolution + 1e-2;
 
         double dx = (get_signed_dist(x + eps, y) - get_signed_dist(x - eps, y)) / (2.0 * eps);
@@ -417,13 +439,18 @@ class OccupancyGrid
             }
         }
 
-        std::cout << "[OccupancyGrid] Found " << known_occupied_inds.size() << " occupied cells"
-                  << std::endl;
+        /*std::cout << "[OccupancyGrid] Found " << known_occupied_inds.size() << " occupied
+         * cells"*/
+        /*          << std::endl;*/
     }
 
     void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,
                          int max_iters = 40)
     {
+        if (!use_sdf)
+            throw std::invalid_argument(
+                "[get_signed_distance] SDF not generated, use_sdf is false");
+
         double step_size = resolution / 2.0;
         for (rfn_state_t &x : traj)
         {
