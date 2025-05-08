@@ -40,9 +40,6 @@ if (Ceres_FOUND)
   )
 
   add_definitions(-DCERES_FOUND)
-else()
-  message(STATUS "Ceres found, adding Ceres-related code.")
-  find_package(Ceres REQUIRED)
 endif()
 
 find_package(GUROBI REQUIRED)
@@ -91,7 +88,6 @@ list(APPEND PLANNER_LIBS
     ${catkin_LIBRARIES}
     ${GINAC_LIBRARIES}
     ${GUROBI_LIBRARIES}
-    Ceres::ceres
     Eigen3::Eigen
 )
 
