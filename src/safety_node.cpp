@@ -69,7 +69,7 @@ class SafetyMonitor
         {
             if (_occ_grid->is_occupied(point.positions[0], point.positions[1], "inflated") &&
                 _occ_grid->get_signed_dist(point.positions[0], point.positions[1]) <
-                    -_occ_grid->get_resolution())
+                    -_occ_grid->get_resolution() / 4)
             {
                 ROS_WARN("Trajectory is in occupied space, trimming!");
                 is_safe = false;

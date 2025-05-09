@@ -19,6 +19,8 @@ Planner::Planner()
     _is_start_set = false;
     _plan_in_free = false;
 
+    _trim_count = 0;
+
     _traj = {};
 
     _solver = std::make_unique<FasterWrapper>();
@@ -90,6 +92,8 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
         return MISC_FAILURE;
     }
 
+    _prev_plan_status = false;
+
     /*_sdf_solver = std::make_unique<BezierSdfNLP>(*/
     /*    _params.N_SEGMENTS, 1, [this](double x, double y) { return _map->get_dist(x, y); });*/
 
@@ -97,29 +101,38 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
     ************ PERFORM  JPS ************
     **************************************/
 
-    bool start_occ           = _map.is_occupied(_start(0, 0), _start(1, 0), "inflated");
-    bool goal_occ            = _map.is_occupied(_goal(0, 0), _goal(1, 0), "inflated");
+    bool start_occ = _map.is_occupied(_start(0, 0), _start(1, 0), "inflated");
+    bool goal_occ  = _map.is_occupied(_goal(0, 0), _goal(1, 0), "inflated");
+    /*bool start_occ =*/
+    /*    _map.get_signed_dist(_start(0, 0), _start(1, 0)) < 2 * _map.get_resolution();*/
+    /*bool goal_occ =*/
+    /*    _map.get_signed_dist(_start(0, 0), _start(1, 0)) < 2 * _map.get_resolution();*/
     ros::Time start_frontend = ros::Time::now();
 
     if (start_occ || goal_occ)
     {
         rfn_state_t point;
-        point.pos = Eigen::Vector3d(_start(0, 0), _start(1, 0), 0);
-        if (goal_occ) point.pos = Eigen::Vector3d(_goal(0, 0), _goal(1, 0), 0);
-
-        std::vector<rfn_state_t> point_vec = {point};
-        std::cerr << "pushing trajectory" << std::endl;
-        _map.push_trajectory(point_vec);
         if (start_occ)
         {
+            point.pos = Eigen::Vector3d(_start(0, 0), _start(1, 0), 0);
+
+            std::vector<rfn_state_t> point_vec = {point};
+            std::cerr << "pushing trajectory" << std::endl;
+            _map.push_trajectory(point_vec, 0.);
             std::cerr << termcolor::yellow
                       << "[Planner Core] Start in occupied space, pushing!!!"
                       << termcolor::reset << std::endl;
             _start(0, 0) = point_vec[0].pos(0);
             _start(1, 0) = point_vec[0].pos(1);
         }
-        else
+
+        if (goal_occ)
         {
+            point.pos = Eigen::Vector3d(_goal(0, 0), _goal(1, 0), 0);
+
+            std::vector<rfn_state_t> point_vec = {point};
+            std::cerr << "pushing trajectory" << std::endl;
+            _map.push_trajectory(point_vec, 0.);
             std::cerr << termcolor::yellow
                       << "[Planner Core]  Goal in occupied space, pushing!!!"
                       << termcolor::reset << std::endl;
@@ -236,6 +249,9 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
         }
     }
 
+    if (jpsPath.size() > _params.MAX_POLYS + 1)
+        jpsPath.erase(jpsPath.begin() + _params.MAX_POLYS + 1, jpsPath.end());
+
     /*************************************
     ************* REFINE JPS *************
     **************************************/
@@ -335,6 +351,7 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
     {
         std::cout << termcolor::green << "[Planner Core] Solver found trajectory, time: "
                   << (ros::Time::now() - start_solve).toSec() << termcolor::reset << std::endl;
+        _prev_plan_status = true;
     }
 
     _traj = _solver->get_trajectory();
@@ -372,14 +389,27 @@ std::vector<rfn_state_t> Planner::get_trajectory()
     {
         Eigen::Vector2d pos = _traj[i].pos.head(2);
         if (_map.is_occupied(pos[0], pos[1], "inflated") &&
-            _map.get_signed_dist(pos[0], pos[1]) < -_map.get_resolution())
+            _map.get_signed_dist(pos[0], pos[1]) < -_map.get_resolution() / 4)
         {
             sz = i - 1;
             std::cout << termcolor::red << "[Planner Core] Trajectory overlaps obstacle, "
                       << _map.get_signed_dist(pos[0], pos[1]) << " trimming to size " << sz
                       << " / " << _traj.size() << termcolor::reset << std::endl;
+            if (_prev_plan_status)
+                _trim_count++;
+            else
+                _trim_count = 0;
+
             break;
         }
+    }
+
+    if (_trim_count > 10)
+    {
+        std::cout << termcolor::red << "[Planner Core] Trajectory trimmed too many times, "
+                  << "letting trajectory go" << termcolor::reset << std::endl;
+        _trim_count = 0;
+        return _traj;
     }
 
     if (sz > 0)

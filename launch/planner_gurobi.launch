@@ -18,14 +18,12 @@
         
         <remap from="/planner_goal" to="/move_base_simple/goal" />
         <remap from="/odometry/filtered" to="/gmapping/odometry" />
-        <remap from="/reference_trajectory" to="raw_trajectory" />
+        <!--<remap from="/reference_trajectory" to="raw_trajectory" />-->
     </node>
 
-  <node name="safety_node" pkg="robust_fast_navigation" type="safety_node" output="screen"/>
+  <!--<node name="safety_node" pkg="robust_fast_navigation" type="safety_node" output="screen"/>-->
 
-    <!--<rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" />-->
     <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
-    <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="safety_node/global_costmap/" />
-    <!--<rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />-->
+    <!--<rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="safety_node/global_costmap/" />-->
 
 </launch>

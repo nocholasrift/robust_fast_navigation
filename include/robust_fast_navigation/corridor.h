@@ -346,11 +346,11 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    /*for (Eigen::Vector2d ob : getOccupied(_map))*/
-    /*{*/
-    /*    obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));*/
-    /*}*/
-    obs3d = _map.get_occupied(3);
+    for (Eigen::Vector2d ob : getOccupied(_map))
+    {
+        obs3d.push_back(Eigen::Vector3d(ob[0], ob[1], 0));
+    }
+    /*obs3d = _map.get_occupied(3);*/
 
     auto end = std::chrono::high_resolution_clock::now();
     std::cout << "getOccupied took "

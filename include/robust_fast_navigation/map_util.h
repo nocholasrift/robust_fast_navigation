@@ -445,7 +445,7 @@ class OccupancyGrid
     }
 
     void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,
-                         int max_iters = 40)
+                         int max_iters = 100)
     {
         if (!use_sdf)
             throw std::invalid_argument(

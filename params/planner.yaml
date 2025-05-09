@@ -1,11 +1,11 @@
 # Planner logic params
 
 # solver: "gcopter"
-solver: "faster"
-# solver: "contour"
+# solver: "faster"
+solver: "contour"
 
 planner_frequency: .35
-lookahead: .5
+lookahead: .45
 max_deviation: 10
 simplify_jps: true
 jps_hysteresis: false
@@ -16,9 +16,10 @@ max_dist_horizon: 4.5
 frame: "map"
 teleop: false
 max_solve_time: .22
+max_polys: 3
 
 # to turn backup mode off entirely, use large negative val
-min_turn_clearance: .1
+min_turn_clearance: -1000
 
 use_arclen: true
 use_global_costmap: true
@@ -30,7 +31,7 @@ barn_goal_dist: 10.0
 n_polys: 6
 solver_traj_dt: .05
 force_final_const: true
-factor_init: 1.0
+factor_init: 3.0
 factor_final: 10.0
 factor_increment: 1.0
 threads: 0

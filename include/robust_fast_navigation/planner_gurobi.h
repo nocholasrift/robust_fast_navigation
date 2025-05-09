@@ -182,6 +182,7 @@ class PlannerROS
     double _min_turn_clearance;
 
     int _n_polys;
+    int _max_polys;
     int _n_threads;
     int _solver_verbose;
     int _failsafe_count;

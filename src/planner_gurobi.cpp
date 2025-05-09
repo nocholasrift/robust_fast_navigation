@@ -52,6 +52,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/use_global_costmap", _use_global_costmap, true);
 
     nh.param("robust_planner/n_polys", _n_polys, 6);
+    nh.param("robust_planner/max_polys", _max_polys, 4);
     nh.param("robust_planner/threads", _n_threads, 0);
     nh.param("robust_planner/verbose", _solver_verbose, 0);
     nh.param("robust_planner/use_minvo", _use_minvo, false);
@@ -77,6 +78,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
 
     // this is actually number of polynomials in traj, not polys...
     _planner_params.N_SEGMENTS             = _n_polys;
+    _planner_params.MAX_POLYS              = _max_polys;
     _planner_params.N_THREADS              = _n_threads;
     _planner_params.FORCE_FINAL_CONSTRAINT = _force_final_const;
     _planner_params.VERBOSE                = _solver_verbose;

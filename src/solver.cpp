@@ -587,6 +587,8 @@ bool SolverGurobi::genNewTraj()
     int count  = 0;
     for (double i = factor_initial_; i <= factor_final_ && solved == false;
          i        = i + factor_increment_)
+    /*for (double i = factor_final_; i >= factor_initial_ && solved == false;*/
+    /*     i        = i - factor_increment_)*/
     {
         if (runtime_s_ > max_solver_time)
         {

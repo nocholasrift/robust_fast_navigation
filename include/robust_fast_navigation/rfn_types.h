@@ -35,6 +35,7 @@ struct planner_params
     bool PLAN_IN_FREE;
     bool SIMPLIFY_JPS;
     double MAX_SOLVE_TIME;
+    int MAX_POLYS;
 };
 typedef struct planner_params planner_params_t;
 

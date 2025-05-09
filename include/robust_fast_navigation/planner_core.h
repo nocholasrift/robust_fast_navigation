@@ -74,9 +74,12 @@ class Planner
     bool _simplify_jps;
     bool _plan_in_free;
     bool _is_start_set;
+    bool _prev_plan_status;
 
     std::unique_ptr<SolverBase> _solver;
     std::vector<rfn_state_t> _traj;
+
+    int _trim_count;
 
     planner_params_t _params;
 
