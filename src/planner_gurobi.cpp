@@ -11,6 +11,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <cmath>
+#include <iterator>
 #include <string>
 #include <unsupported/Eigen/Splines>
 #include <vector>
@@ -18,6 +19,7 @@
 #include "costmap_2d/cost_values.h"
 #include "robust_fast_navigation/planner_core.h"
 #include "ros/console.h"
+#include "trajectory_msgs/JointTrajectory.h"
 
 typedef Eigen::Spline<double, 1, 3> Spline1D;
 typedef Eigen::SplineFitting<Spline1D> SplineFitting1D;
@@ -552,8 +554,14 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
 
     if ((_odom(1) - goal(1)) * (_odom(1) - goal(1)) +
             (_odom(0) - goal(0)) * (_odom(0) - goal(0)) <
-        .2)
-        return;
+        .5)
+    {
+        // publish empty trajecotry
+        trajectory_msgs::JointTrajectory empty_traj;
+        empty_traj.header.frame_id = _frame_str;
+        empty_traj.header.stamp    = ros::Time::now();
+        trajPub.publish(empty_traj);
+    }
 
     /*************************************
     ************* UPDATE MAP *************
