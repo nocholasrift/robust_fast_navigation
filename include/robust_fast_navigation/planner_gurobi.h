@@ -180,6 +180,7 @@ class PlannerROS
 
     double _inflate_radius;
     double _min_turn_clearance;
+    double _trigger_trim_dist;
 
     int _n_polys;
     int _max_polys;

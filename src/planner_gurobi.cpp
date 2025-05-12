@@ -52,6 +52,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/max_dist_horizon", _max_dist_horizon, 4.);
     nh.param<std::string>("robust_planner/solver", _solver_str, "faster");
     nh.param("robust_planner/use_global_costmap", _use_global_costmap, true);
+    nh.param("robust_planner/trigger_trim_dist", _trigger_trim_dist, -100.);
 
     nh.param("robust_planner/n_polys", _n_polys, 6);
     nh.param("robust_planner/max_polys", _max_polys, 4);
@@ -77,6 +78,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     _planner_params.DT_FACTOR_FINAL     = _factor_final;
     _planner_params.DT_FACTOR_INCREMENT = _factor_increment;
     _planner_params.SOLVER_TRAJ_DT      = _solver_traj_dt;
+    _planner_params.TRIM_DIST           = _trigger_trim_dist;
 
     // this is actually number of polynomials in traj, not polys...
     _planner_params.N_SEGMENTS             = _n_polys;
