@@ -200,8 +200,8 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
         //     //std::cout << "[straight](" << curr.x << ", " << curr.y << ")" <<
         //     std::endl;
         // is node on border?
-        if ((n.x > sizeX - 1 && dirx == 1) || (n.y > sizeY - 1 && diry == 1) ||
-            (n.x < 0 && dirx == -1) || (n.y < 0 && diry == -1))
+        if ((n.x >= sizeX - 1 && dirx == 1) || (n.y >= sizeY - 1 && diry == 1) ||
+            (n.x <= 0 && dirx == -1) || (n.y <= 0 && diry == -1))
         {
             return false;
         }
@@ -213,6 +213,11 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
         {
             return false;
         }
+
+        if (n.x > sizeX -1)
+          std::cout << "[JPS] AHHHHHH: " << sizeX -1 << " " << n.x << std::endl;
+        if (n.y > sizeY -1)
+          std::cout << "[JPS] AHHHHHH: " << sizeY -1 << " " << n.y << std::endl;
 
         if (n.x == destX && n.y == destY)
         {
@@ -229,24 +234,29 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
         {
             /*if (ny != sizeY - 1 && _map[(ny + 1) * sizeX + nx] == occupied_val &&*/
             /*    _map[(ny + 1) * sizeX + nx + dirx] != occupied_val)*/
-            if (ny != sizeY - 1 && _map_util.is_occupied(nx, ny + 1, _layer) &&
-                !_map_util.is_occupied(nx + dirx, ny + 1, _layer))
-            {
-                // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
-                // << dirx << "\t1" << std::endl;
-                add_to_queue(n.x, n.y, dirx, 1, cost);
-                added = true;
+            if (ny < sizeY - 1){
+              if (_map_util.is_occupied(nx, ny + 1, _layer) &&
+                  !_map_util.is_occupied(nx + dirx, ny + 1, _layer))
+              {
+                  // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
+                  // << dirx << "\t1" << std::endl;
+                  add_to_queue(n.x, n.y, dirx, 1, cost);
+                  added = true;
+              }
             }
 
             /*if (n.y != 0 && _map[(n.y - 1) * sizeX + n.x] == occupied_val &&*/
             /*    _map[(n.y - 1) * sizeX + n.x + dirx] != occupied_val)*/
-            if (ny != 0 && _map_util.is_occupied(nx, ny - 1, _layer) &&
-                !_map_util.is_occupied(nx + dirx, ny - 1, _layer))
+            if (ny > 0)
             {
-                // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
-                // << dirx << "\t-1" << std::endl;
-                add_to_queue(n.x, n.y, dirx, -1, cost);
-                added = true;
+              if (_map_util.is_occupied(nx, ny - 1, _layer) &&
+                  !_map_util.is_occupied(nx + dirx, ny - 1, _layer))
+              {
+                  // std::cout << "found forced at (" << n.x << "," << n.y << ")\t"
+                  // << dirx << "\t-1" << std::endl;
+                  add_to_queue(n.x, n.y, dirx, -1, cost);
+                  added = true;
+              }
             }
         }
 
@@ -254,24 +264,29 @@ bool JPSPlan::explore_straight(const JPSNode_t &start)
         {
             /*if (n.x != sizeX - 1 && _map[n.y * sizeX + n.x + 1] == occupied_val &&*/
             /*    _map[(n.y + diry) * sizeX + n.x + 1] != occupied_val)*/
-            if (nx != sizeX - 1 && _map_util.is_occupied(nx + 1, ny, _layer) &&
-                !_map_util.is_occupied(nx + 1, ny + diry, _layer))
-            {
-                // std::cout << "found forced at (" << n.x << "," << n.y <<
-                // ")\t1\t" << diry << std::endl;
-                add_to_queue(n.x, n.y, 1, diry, cost);
-                added = true;
+            if (nx < sizeX - 1){
+              if(_map_util.is_occupied(nx + 1, ny, _layer) &&
+                  !_map_util.is_occupied(nx + 1, ny + diry, _layer))
+              {
+                  // std::cout << "found forced at (" << n.x << "," << n.y <<
+                  // ")\t1\t" << diry << std::endl;
+                  add_to_queue(n.x, n.y, 1, diry, cost);
+                  added = true;
+              }
             }
 
             /*if (n.x != 0 && _map[n.y * sizeX + n.x - 1] == occupied_val &&*/
             /*    _map[(n.y + diry) * sizeX + n.x - 1] != occupied_val)*/
-            if (nx != 0 && _map_util.is_occupied(nx - 1, ny, _layer) &&
-                !_map_util.is_occupied(nx - 1, ny + diry, _layer))
+            if (nx > 0)
             {
-                // std::cout << "found forced at (" << n.x << "," << n.y <<
-                // ")\t-1\t" << diry << std::endl;
-                add_to_queue(n.x, n.y, -1, diry, cost);
-                added = true;
+              if (_map_util.is_occupied(nx - 1, ny, _layer) &&
+                  !_map_util.is_occupied(nx - 1, ny + diry, _layer))
+              {
+                  // std::cout << "found forced at (" << n.x << "," << n.y <<
+                  // ")\t-1\t" << diry << std::endl;
+                  add_to_queue(n.x, n.y, -1, diry, cost);
+                  added = true;
+              }
             }
         }
 
@@ -345,8 +360,8 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
         // //std::cout << "[diagonal] curr is: " << "(" << curr.x << ", " <<
         // curr.y << ")" << std::endl;
 
-        if ((n.x > sizeX - 1 && dirx == 1) || (n.y > sizeY - 1 && diry == 1) ||
-            (n.x < 0 && dirx == -1) || (n.y < 0 && diry == -1))
+        if ((n.x >= sizeX - 1 && dirx == 1) || (n.y >= sizeY - 1 && diry == 1) ||
+            (n.x <= 0 && dirx == -1) || (n.y <= 0 && diry == -1))
         {
             return false;
         }
@@ -358,6 +373,11 @@ bool JPSPlan::explore_diagonal(const JPSNode_t &start)
         {
             return false;
         }
+
+        if (n.x > sizeX -1)
+          std::cout << "[JPS] DIAGONAL AHHHHHH: " << sizeX -1 << " " << n.x << std::endl;
+        if (n.y > sizeY -1)
+          std::cout << "[JPS] DIAGONAL AHHHHHH: " << sizeY -1 << " " << n.y << std::endl;
 
         if (n.x == destX && n.y == destY)
         {

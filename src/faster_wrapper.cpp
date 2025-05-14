@@ -62,6 +62,17 @@ bool FasterWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& e
 
     _solver.setX0(initialState);
     _solver.setXf(finalState);
+    _solver.setForceFinalConstraint(polys.size() == 1);
+
+    double factor_init      = _params.DT_FACTOR_INIT;
+    double factor_final     = _params.DT_FACTOR_FINAL;
+    double factor_increment = _params.DT_FACTOR_INCREMENT;
+
+    if (polys.size() == 1)
+      _solver.setFactorInitialAndFinalAndIncrement(1, factor_final, factor_increment);
+    else 
+      _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final, factor_increment);
+      
 
     // set polygons
     _solver.setPolytopes(polys);

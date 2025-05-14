@@ -73,6 +73,13 @@ void Planner::set_start(const Eigen::MatrixXd &start)
 void Planner::set_goal(const Eigen::MatrixXd &goal)
 {
     _goal        = goal;
+    std::vector<double> clamped_goal = _map.clamp_point_to_bounds({_start(0,0), _start(1,0)}, {goal(0,0), goal(1,0)});
+    _goal(0,0) = clamped_goal[0];
+    _goal(1,0) = clamped_goal[1];
+
+    std::cout << "clamping goal to: " << _goal.col(0) << std::endl;
+    std::cout << "from: " << goal.col(0) << std::endl;
+
     _is_goal_set = true;
 }
 
@@ -169,6 +176,7 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
     /*jps.set_map(_map.get_data("inflated"), w, h, x, y, resolution);*/
     jps.set_util(_map, "inflated");
 
+    std::cout << "checking jps" << std::endl;
     ros::Time start_jps = ros::Time::now();
     int jps_status      = jps.JPS();
     std::cout << "[Planner Core] JPS took " << (ros::Time::now() - start_jps).toSec() << "s"

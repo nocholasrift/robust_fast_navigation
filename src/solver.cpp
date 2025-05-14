@@ -391,20 +391,21 @@ void SolverGurobi::setConstraintsXf()
     // Constraint xT==x_final
     for (int i = 0; i < 3; i++)
     {
-        if (forceFinalConstraint_ == true)
-        {
             // std::cout << "*********FORCING FINAL CONSTRAINT******" << std::endl;
             // std::cout << xf_[i] << std::endl;
             final_cons.push_back(
                 m.addConstr(getPos(N_ - 1, dt_, i) - xf_[i] == 0,
                             "FinalPosAxis_" + std::to_string(i)));  // Final position
+        if (forceFinalConstraint_ == true)
+        {
+
+          final_cons.push_back(
+              m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,
+                          "FinalVelAxis_" + std::to_string(i)));  // Final velocity
+          final_cons.push_back(
+              m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,
+                          "FinalAccel_" + std::to_string(i)));  // Final acceleration
         }
-        /*final_cons.push_back(*/
-        /*    m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,*/
-        /*                "FinalVelAxis_" + std::to_string(i)));  // Final velocity*/
-        /*final_cons.push_back(*/
-        /*    m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,*/
-        /*                "FinalAccel_" + std::to_string(i)));  // Final acceleration*/
     }
 }
 

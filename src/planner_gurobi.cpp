@@ -298,9 +298,9 @@ void PlannerROS::publishOccupied(const ros::TimerEvent &)
 }
 
 /**********************************************************************
-  Function callback which reads a published map. This map is different
-  from the local and global costmap, since it doesn't contain an
-  inflate layer around the obstacles.
+  Function callba__ck which reads a published map. This map is different
+  from the local __and global costmap, since it doesn't contain an
+  inflate layer a__round the obstacles.
 
   Inputs:
     - OccupancyGrid message
@@ -554,9 +554,7 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
 
     if (!_is_init || !_is_goal_set || !_is_costmap_started) return;
 
-    if ((_odom(1) - goal(1)) * (_odom(1) - goal(1)) +
-            (_odom(0) - goal(0)) * (_odom(0) - goal(0)) <
-        .5)
+    if ((_odom.head(2) - goal.head(2)).norm() < .5)
     {
         // publish empty trajecotry
         trajectory_msgs::JointTrajectory empty_traj;
@@ -690,6 +688,7 @@ bool PlannerROS::plan(bool is_failsafe)
     {
         initialPVAJ << Eigen::Vector3d(_odom(0), _odom(1), 0), Eigen::Vector3d::Zero(),
             Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+        ROS_INFO("initializing PVAJ where sentTraj is 0, mpchorizon is empty");
     }
     else if (mpcHorizon.points.size() == 0 &&
              !_use_arclen)  // use trajectory for init point if no horizon
@@ -722,6 +721,7 @@ bool PlannerROS::plan(bool is_failsafe)
 
         // jerk (stored in effort)
         initialPVAJ.col(3) = Eigen::Vector3d(p.effort[0], p.effort[1], p.effort[2]);
+        ROS_INFO("initializing PVAJ where mpchorizon is empty");
     }
     else if (mpcHorizon.points.size() > 0)
     {
@@ -758,6 +758,7 @@ bool PlannerROS::plan(bool is_failsafe)
 
         // jerk (stored in effort)
         initialPVAJ.col(3) = Eigen::Vector3d(p.effort[0], p.effort[1], p.effort[2]);
+        ROS_INFO("initializing PVAJ using mpc horizon");
     }
     else
     {
@@ -776,12 +777,14 @@ bool PlannerROS::plan(bool is_failsafe)
     **************** PLAN ****************
     **************************************/
 
+    ROS_INFO_STREAM("initialPVAJ: " << initialPVAJ);
+
     /*map_util::occupancy_grid_t occ_grid =*/
     /*map_util::costmap_to_occgrid(*global_costmap->getCostmap());*/
 
+    _planner.set_costmap(*_occ_grid);
     _planner.set_start(initialPVAJ);
     _planner.set_goal(finalPVAJ);
-    _planner.set_costmap(*_occ_grid);
 
     std::vector<Eigen::Vector2d> jpsPath;
 

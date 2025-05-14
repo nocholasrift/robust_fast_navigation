@@ -25,5 +25,6 @@
 
     <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
     <!--<rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="safety_node/global_costmap/" />-->
+    <include file="$(find slam_toolbox)/launch/online_async.launch" />
 
 </launch>
