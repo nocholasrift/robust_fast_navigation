@@ -766,6 +766,8 @@ bool PlannerROS::plan(bool is_failsafe)
         return false;
     }
 
+    // if velocity is 0, set to small value in direction of robot heading
+
     if (is_failsafe)
     {
         initialPVAJ.col(1) = Eigen::Vector3d::Zero();
