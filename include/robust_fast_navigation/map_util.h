@@ -93,9 +93,11 @@ class OccupancyGrid
     void update(const costmap_2d::Costmap2D &costmap)
     {
         if (costmap.getSizeInCellsX() != width || costmap.getSizeInCellsY() != height 
+            || origin_x != costmap.getOriginX() || origin_y != costmap.getOriginY() 
             || reset_counter++ > 10)
         {
-            std::cout << "[OccupancyGrid] Costmap size changed, resizing" << std::endl;
+            std::cout << "[OccupancyGrid] Costmap metadata changed, updating occupancies"
+                      << std::endl;
             // reset cache since map has changed geometry
             known_occupied_inds.clear();
             reset_counter = 0;

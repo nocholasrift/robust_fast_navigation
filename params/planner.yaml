@@ -23,7 +23,7 @@ min_turn_clearance: -1000
 trigger_trim_dist: -0.05
 
 use_arclen: true
-use_global_costmap: true
+use_global_costmap: false
 
 is_barn: false
 barn_goal_dist: 10.0
