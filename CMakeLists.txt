@@ -29,16 +29,19 @@ find_package(catkin REQUIRED COMPONENTS
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(Ceres QUIET)
 if (Ceres_FOUND)
-  list(APPEND PLANNER_SRCS
-    src/ph_demo.cpp
-    src/contour_wrapper.cpp
-  )
-  list(APPEND PLANNER_LIBS
-      Ceres::ceres
-      ipopt
-  )
-
-  add_definitions(-DCERES_FOUND)
+  if (TARGET Ceres::ceres)
+    list(APPEND PLANNER_SRCS
+      src/ph_demo.cpp
+      src/contour_wrapper.cpp
+    )
+    list(APPEND PLANNER_LIBS
+        Ceres::ceres
+        ipopt
+    )
+    add_definitions(-DCERES_FOUND)
+  else()
+    message(STATUS "Ceres found, but not as a target. Using Ceres as a library.")
+  endif()
 endif()
 
 find_package(GUROBI REQUIRED)

@@ -391,20 +391,19 @@ void SolverGurobi::setConstraintsXf()
     // Constraint xT==x_final
     for (int i = 0; i < 3; i++)
     {
-            // std::cout << "*********FORCING FINAL CONSTRAINT******" << std::endl;
-            // std::cout << xf_[i] << std::endl;
-            final_cons.push_back(
-                m.addConstr(getPos(N_ - 1, dt_, i) - xf_[i] == 0,
-                            "FinalPosAxis_" + std::to_string(i)));  // Final position
+        // std::cout << "*********FORCING FINAL CONSTRAINT******" << std::endl;
+        // std::cout << xf_[i] << std::endl;
+        final_cons.push_back(
+            m.addConstr(getPos(N_ - 1, dt_, i) - xf_[i] == 0,
+                        "FinalPosAxis_" + std::to_string(i)));  // Final position
         if (forceFinalConstraint_ == true)
         {
-
-          final_cons.push_back(
-              m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,
-                          "FinalVelAxis_" + std::to_string(i)));  // Final velocity
-          final_cons.push_back(
-              m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,
-                          "FinalAccel_" + std::to_string(i)));  // Final acceleration
+            final_cons.push_back(
+                m.addConstr(getVel(N_ - 1, dt_, i) - xf_[i + 3] == 0,
+                            "FinalVelAxis_" + std::to_string(i)));  // Final velocity
+            final_cons.push_back(
+                m.addConstr(getAccel(N_ - 1, dt_, i) - xf_[i + 6] == 0,
+                            "FinalAccel_" + std::to_string(i)));  // Final acceleration
         }
     }
 }
@@ -601,28 +600,26 @@ bool SolverGurobi::genNewTraj()
 
         // setup callback to terminate optimization if it takes too long
         // the entire process should be less than max_solver_time
-        cb_.set_timeout(max_solver_time - runtime_s_);
-        m.setCallback(&cb_);
+        std::cout << "setting callback" << std::endl;
+        /*cb_.set_timeout(max_solver_time - runtime_s_);*/
+        /*m.setCallback(&cb_);*/
         m.set(GRB_DoubleParam_TimeLimit, max_solver_time - runtime_s_);
         // std::cout << "timeout time is " << max_solver_time-runtime_s_ << std::endl;
 
         trials_ = trials_ + 1;
-        findDT(i);
-        // generate MINVO and Bezier conversion matrices
-        // std::cout << "Going to try with dt_= " << dt_ << ", should_terminate_=" <<
-        // cb_.should_terminate_ << std::endl;
-        /*setMaxConstraints();*/
-        setPolytopesConstraints();
-        // setOcclusionConstraint();
-        setConstraintsX0();
-        setConstraintsXf();
-        setDynamicConstraints();
-        setObjective();
-        resetX();
 
         std::cout << "solving now!" << std::endl;
         try
         {
+            findDT(i);
+            /*setMaxConstraints();*/
+            setPolytopesConstraints();
+            // setOcclusionConstraint();
+            setConstraintsX0();
+            setConstraintsXf();
+            setDynamicConstraints();
+            setObjective();
+            resetX();
             solved = callOptimizer();
         }
         catch (GRBException e)
