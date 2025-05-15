@@ -47,8 +47,8 @@ class OccupancyGrid
         origin_y   = 0.0;
         data       = nullptr;
 
-        resized = false;
-        use_sdf = false;
+        resized       = false;
+        use_sdf       = false;
         reset_counter = 0;
     }
 
@@ -62,7 +62,7 @@ class OccupancyGrid
         origin_y        = oy;
         data            = d;
         occupied_values = ov;
-        reset_counter = 0;
+        reset_counter   = 0;
 
         update_occupied_obstacles();
 
@@ -80,9 +80,13 @@ class OccupancyGrid
         occupied_values = {costmap_2d::LETHAL_OBSTACLE,
                            costmap_2d::INSCRIBED_INFLATED_OBSTACLE};
         data            = costmap.getCharMap();
-        reset_counter = 0;
+        reset_counter   = 0;
 
-        std::cout << "[OccupancyGrid] Costmap size " << costmap.getSizeInCellsX() << " " << costmap.getSizeInCellsY() << std::endl;
+        std::cout << "[OccupancyGrid] Costmap size " << costmap.getSizeInCellsX() << " "
+                  << costmap.getSizeInCellsY() << std::endl;
+
+        std::cout << "[OccupancyGrid] Costmap size: " << costmap.getSizeInCellsX() << " x "
+                  << costmap.getSizeInCellsY() << std::endl;
 
         update_occupied_obstacles();
 
@@ -92,8 +96,8 @@ class OccupancyGrid
 
     void update(const costmap_2d::Costmap2D &costmap)
     {
-        if (costmap.getSizeInCellsX() != width || costmap.getSizeInCellsY() != height 
-            || reset_counter++ > 10)
+        if (costmap.getSizeInCellsX() != width || costmap.getSizeInCellsY() != height ||
+            reset_counter++ > 10)
         {
             std::cout << "[OccupancyGrid] Costmap size changed, resizing" << std::endl;
             // reset cache since map has changed geometry
@@ -137,7 +141,7 @@ class OccupancyGrid
         /*          << "ms" << std::endl;*/
     }
 
-    // std::vector<double> clamp_point_to_bounds(const std::vector<double>& goal) 
+    // std::vector<double> clamp_point_to_bounds(const std::vector<double>& goal)
     // {
     //     std::vector<double> clamped = goal;
     //
@@ -149,23 +153,22 @@ class OccupancyGrid
     //
     //     return clamped;
     // }
-    std::vector<double> clamp_point_to_bounds(
-      const std::vector<double>& current,
-      const std::vector<double>& goal
-    )
+    std::vector<double> clamp_point_to_bounds(const std::vector<double> &current,
+                                              const std::vector<double> &goal)
     {
         double epsilon = .95;
-        double x_min = origin_x;
-        double y_min = origin_y;
-        double x_max = x_min + (width) * resolution;
-        double y_max = y_min + (height) * resolution;
+        double x_min   = origin_x;
+        double y_min   = origin_y;
+        double x_max   = x_min + (width)*resolution;
+        double y_max   = y_min + (height)*resolution;
 
         double dx = goal[0] - current[0];
         double dy = goal[1] - current[1];
 
         double t_min = 0.0, t_max = 1.0;
 
-        auto update_t = [&](double p, double dp, double min_b, double max_b) -> bool {
+        auto update_t = [&](double p, double dp, double min_b, double max_b) -> bool
+        {
             if (std::abs(dp) < 1e-8) return true;
             double t0 = (min_b - p) / dp;
             double t1 = (max_b - p) / dp;
@@ -181,14 +184,12 @@ class OccupancyGrid
         int count = 0;
         t_max *= epsilon;
 
-        while (is_occupied(current[0] + (t_max * epsilon) * dx, 
-                           current[1] + (t_max * epsilon) * dy, "inflated") && count++ < 10)
+        while (is_occupied(current[0] + (t_max * epsilon) * dx,
+                           current[1] + (t_max * epsilon) * dy, "inflated") &&
+               count++ < 10)
             t_max *= epsilon;
 
-        return {
-            current[0] + (t_max) * dx,
-            current[1] + (t_max) * dy
-        };
+        return {current[0] + (t_max)*dx, current[1] + (t_max)*dy};
     }
 
     void generate_sdf()
@@ -298,7 +299,7 @@ class OccupancyGrid
         /*std::cout << "[cells_to_index] mx: " << mx << " my: " << my << std::endl;*/
         if (mx > width || my > height)
         {
-      std::cout << mx << " " << my << std::endl;
+            std::cout << mx << " " << my << std::endl;
             throw std::invalid_argument(
                 "[cells_to_index] mx or my is greater than width or height");
         }
@@ -532,17 +533,16 @@ class OccupancyGrid
                     Eigen::Vector2d grad  = {d[0], d[1]};
                     try
                     {
-                      Eigen::Vector2d tmp = p + step_size * grad;
-                      dist                  = get_signed_dist(tmp[0],tmp[1]);
-                                                              
-                    } 
-                    catch(...)
+                        Eigen::Vector2d tmp = p + step_size * grad;
+                        dist                = get_signed_dist(tmp[0], tmp[1]);
+                    }
+                    catch (...)
                     {
-                      x.pos.head(2) = p;
-                      return;
+                        x.pos.head(2) = p;
+                        return;
                     }
 
-                    p                     = p + step_size * grad;
+                    p = p + step_size * grad;
                 }
 
                 // update trajectory
