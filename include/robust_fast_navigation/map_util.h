@@ -522,7 +522,15 @@ class OccupancyGrid
         for (rfn_state_t &x : traj)
         {
             // perform gradient descent on point if it is too close to obstacles
-            double dist       = get_signed_dist(x.pos(0), x.pos(1));
+            double dist;
+            try
+            {
+                dist = get_signed_dist(x.pos(0), x.pos(1));
+            }
+            catch (...)
+            {
+                return;
+            }
             Eigen::Vector2d p = x.pos.head(2);
             if (dist < thresh_dist)
             {
