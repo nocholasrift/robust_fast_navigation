@@ -72,10 +72,11 @@ void Planner::set_start(const Eigen::MatrixXd &start)
 
 void Planner::set_goal(const Eigen::MatrixXd &goal)
 {
-    _goal        = goal;
-    std::vector<double> clamped_goal = _map.clamp_point_to_bounds({_start(0,0), _start(1,0)}, {goal(0,0), goal(1,0)});
-    _goal(0,0) = clamped_goal[0];
-    _goal(1,0) = clamped_goal[1];
+    _goal = goal;
+    std::vector<double> clamped_goal =
+        _map.clamp_point_to_bounds({_start(0, 0), _start(1, 0)}, {goal(0, 0), goal(1, 0)});
+    _goal(0, 0) = clamped_goal[0];
+    _goal(1, 0) = clamped_goal[1];
 
     std::cout << "clamping goal to: " << _goal.col(0) << std::endl;
     std::cout << "from: " << goal.col(0) << std::endl;
@@ -304,6 +305,28 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
         std::cout << termcolor::red << "[Planner Core] Corridor creation failed"
                   << termcolor::reset << std::endl;
         return CORRIDOR_FAIL;
+    }
+
+    if (!corridor::isInPoly(hPolys.back(), Eigen::Vector2d(_goal(0, 0), _goal(1, 0))) &&
+        jpsPath.size() > 1)
+    {
+        // iterate over points in last segment of JPS path to find point in corridor
+        Eigen::Vector2d segment = jpsPath.back() - jpsPath[jpsPath.size() - 2];
+        double segment_length   = segment.norm();
+        double step_size        = segment_length / 10;
+
+        segment.normalize();
+
+        for (int i = 0; i < 10; ++i)
+        {
+            Eigen::Vector2d point = jpsPath[jpsPath.size() - 2] + segment * step_size * i;
+            if (corridor::isInPoly(hPolys.back(), point))
+            {
+                _goal(0, 0) = point(0);
+                _goal(1, 0) = point(1);
+                break;
+            }
+        }
     }
 
     bool is_in_corridor = false;

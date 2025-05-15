@@ -392,15 +392,16 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
         if (status) polys.insert(polys.begin(), tmp[0]);
     }
 
-    if (!isInPoly(polys.back(), Eigen::Vector2d(finalPVAJ(0, 0), finalPVAJ(1, 0))))
-    {
-        std::cout << "[Corridor] End was not in poly, adding extra polygon to correct this\n";
-        std::vector<Eigen::VectorXd> poses = {finalPVAJ.col(0), finalPVAJ.col(0)};
-        std::vector<Eigen::MatrixX4d> tmp;
-        status = convexCover(poses, obs3d, Eigen::Vector3d(x, y, -.1),
-                             Eigen::Vector3d(x + w, y + h, .1), .1, 5.0, tmp);
-        if (status) polys.insert(polys.end(), tmp[0]);
-    }
+    /*if (!isInPoly(polys.back(), Eigen::Vector2d(finalPVAJ(0, 0), finalPVAJ(1, 0))))*/
+    /*{*/
+    /*    std::cout << "[Corridor] End was not in poly, adding extra polygon to correct
+     * this\n";*/
+    /*    std::vector<Eigen::VectorXd> poses = {finalPVAJ.col(0), finalPVAJ.col(0)};*/
+    /*    std::vector<Eigen::MatrixX4d> tmp;*/
+    /*    status = convexCover(poses, obs3d, Eigen::Vector3d(x, y, -.1),*/
+    /*                         Eigen::Vector3d(x + w, y + h, .1), .1, 5.0, tmp);*/
+    /*    if (status) polys.insert(polys.end(), tmp[0]);*/
+    /*}*/
 
     // check if obstacles are inside the corridor
     for (Eigen::Vector3d ob : obs3d)
