@@ -1,0 +1,21 @@
+scan_filter_chain:
+- name: range
+  type: laser_filters/LaserScanRangeFilter
+  params:
+    use_message_range_limits: false
+    lower_threshold: 0.2
+    upper_threshold: .inf
+    lower_replacement_value: .inf
+    upper_replacement_value: .inf
+- name: speckle_filter
+  type: laser_filters/LaserScanSpeckleFilter
+  params:
+    filter_type: 0
+    max_range: 10
+    max_range_difference: 0.01
+    filter_window: 3
+- name: angle
+  type: laser_filters/LaserScanAngularBoundsFilter
+  params:
+    lower_angle: -2.1
+    upper_angle: 2.1

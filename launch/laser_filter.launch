@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+
+  <node pkg="laser_filters" type="scan_to_scan_filter_chain"
+      name="laser_filter">
+    <rosparam command="load" file="/etc/ros/noetic/ros.d/lidar_filter.yaml" />
+	    <!-- <remap from="scan" to="front/scan" /> -->
+    <remap from="/scan_filtered" to="/front/scan" />
+  </node>
+  <!-- <node pkg="tf" type="static_transform_publisher" name="lidar_to_baselink" args=".165 0 .127 0 0 0 /base_link /laser 1"/> -->
+  <node pkg="tf" type="static_transform_publisher" name="lidar_to_baselink" args=".14 0 .203 0 0 0 /base_link /laser 1000"/>
+
+</launch>

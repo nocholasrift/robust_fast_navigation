@@ -307,27 +307,27 @@ PlannerStatus Planner::plan(double horizon, std::vector<Eigen::Vector2d> &jpsPat
         return CORRIDOR_FAIL;
     }
 
-    if (!corridor::isInPoly(hPolys.back(), Eigen::Vector2d(_goal(0, 0), _goal(1, 0))) &&
-        jpsPath.size() > 1)
-    {
-        // iterate over points in last segment of JPS path to find point in corridor
-        Eigen::Vector2d segment = jpsPath.back() - jpsPath[jpsPath.size() - 2];
-        double segment_length   = segment.norm();
-        double step_size        = segment_length / 10;
+    // if (!corridor::isInPoly(hPolys.back(), Eigen::Vector2d(_goal(0, 0), _goal(1, 0))) &&
+    //     jpsPath.size() > 1)
+    // {
+    //     // iterate over points in last segment of JPS path to find point in corridor
+    //     Eigen::Vector2d segment = jpsPath.back() - jpsPath[jpsPath.size() - 2];
+    //     double segment_length   = segment.norm();
+    //     double step_size        = segment_length / 10;
 
-        segment.normalize();
+    //     segment.normalize();
 
-        for (int i = 0; i < 10; ++i)
-        {
-            Eigen::Vector2d point = jpsPath[jpsPath.size() - 2] + segment * step_size * i;
-            if (corridor::isInPoly(hPolys.back(), point))
-            {
-                _goal(0, 0) = point(0);
-                _goal(1, 0) = point(1);
-                break;
-            }
-        }
-    }
+    //     for (int i = 0; i < 10; ++i)
+    //     {
+    //         Eigen::Vector2d point = jpsPath[jpsPath.size() - 2] + segment * step_size * i;
+    //         if (corridor::isInPoly(hPolys.back(), point))
+    //         {
+    //             _goal(0, 0) = point(0);
+    //             _goal(1, 0) = point(1);
+    //             break;
+    //         }
+    //     }
+    // }
 
     bool is_in_corridor = false;
 

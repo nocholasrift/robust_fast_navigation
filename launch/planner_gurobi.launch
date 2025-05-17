@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <launch>
 
-    <arg name="barn" default="false" />
-    <arg name="barn_dist" default="10.0" />
+    <arg name="barn" default="true" />
+    <arg name="barn_dist" default="30.0" />
     <!--<arg name="barn_dist" default="3.5" />-->
     <!--<arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />-->
 
@@ -23,6 +23,7 @@
 
   <!--<node name="safety_node" pkg="robust_fast_navigation" type="safety_node" output="screen"/>-->
 
+    <!-- <include file="$(find slam_toolbox)/launch/online_async.launch"/> -->
     <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
     <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
 
