@@ -44,6 +44,16 @@ if (Ceres_FOUND)
   endif()
 endif()
 
+find_package(mrs_msgs QUIET)
+if (mrs_msgs_FOUND)
+  add_definitions(-DMRS_MSGS_FOUND)
+  list(APPEND PLANNER_LIBS
+    ${mrs_msgs_LIBRARIES}
+  )
+else()
+  message("mrs_msgs NOT FOUND")
+endif()
+
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)

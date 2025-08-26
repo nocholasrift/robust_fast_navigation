@@ -508,9 +508,8 @@ class OccupancyGrid
             }
         }
 
-        /*std::cout << "[OccupancyGrid] Found " << known_occupied_inds.size() << " occupied
-         * cells"*/
-        /*          << std::endl;*/
+        std::cout << "[OccupancyGrid] Found " << known_occupied_inds.size()
+                  << " occupied cells " << std::endl;
     }
 
     void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,

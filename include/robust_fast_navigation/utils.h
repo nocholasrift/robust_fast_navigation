@@ -9,6 +9,11 @@
 #include <trajectory_msgs/JointTrajectory.h>
 #include <visualization_msgs/Marker.h>
 
+#ifdef MRS_MSGS_FOUND
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+#include <trajectory_msgs/MultiDOFJointTrajectory.h>
+#endif
+
 #include <Eigen/Eigen>
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -377,6 +382,44 @@ inline trajectory_msgs::JointTrajectory convertTrajToMsg(
 
     return msg;
 }
+
+#ifdef MRS_MSGS_FOUND
+inline mrs_msgs::TrajectoryReferenceSrv convert_traj_to_mrs_srv(const trajectory_msgs::JointTrajectory &trajectory, const std::string &frame_str, double flying_height)
+{
+  static int id = 0;
+  mrs_msgs::TrajectoryReferenceSrv traj_srv;
+  mrs_msgs::TrajectoryReference traj_msg;
+  traj_msg.header.frame_id = frame_str;
+  traj_msg.header.stamp = ros::Time::now();
+
+  traj_msg.use_heading = false;
+  traj_msg.fly_now = true;
+  traj_msg.input_id = id++;
+
+  if (trajectory.points.size() < 2){
+      ROS_WARN("Trajectory has less than 2 points, cannot convert to mrs_msgs::TrajectoryReference");
+      traj_msg.fly_now = false;
+      return traj_srv;
+  }else
+      traj_msg.dt = trajectory.points[1].time_from_start.toSec() - trajectory.points[0].time_from_start.toSec();
+
+  for (int i = 0; i < trajectory.points.size(); ++i)
+  {
+      mrs_msgs::Reference p;
+      p.position.x = trajectory.points[i].positions[0];
+      p.position.y = trajectory.points[i].positions[1];
+      p.position.z = flying_height;
+
+      p.heading = 0.0;
+
+      traj_msg.points.push_back(p);
+  }
+
+  traj_srv.request.trajectory = traj_msg;
+
+  return traj_srv;
+}
+#endif
 
 inline void visualizeExpectedFailuresAlongTraj(
     double threshold,

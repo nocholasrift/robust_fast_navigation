@@ -12,8 +12,8 @@ jps_hysteresis: false
 traj_dt: .05
 failsafe_count: 4
 plan_in_free: false
-max_dist_horizon: 3.0
-frame: "map"
+max_dist_horizon: 5.0
+frame: "uav1/world_origin"
 teleop: false
 max_solve_time: .22
 max_polys: 3
@@ -23,7 +23,7 @@ min_turn_clearance: -1000
 trigger_trim_dist: -100.00
 
 use_arclen: true
-use_global_costmap: true
+use_global_costmap: false
 
 is_barn: false
 barn_goal_dist: 10.0
@@ -41,4 +41,5 @@ verbose: 0
 # For debug
 plan_once: false
 
-is_drone: false
+is_drone: true
+use_mpc: true

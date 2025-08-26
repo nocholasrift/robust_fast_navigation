@@ -86,6 +86,8 @@ class PlannerROS
     bool _primitive_started;
     bool _use_minvo;
     bool _force_final_const;
+    bool _is_drone;
+    bool _use_mpc;
 
     std::string _frame_str;
     std::string _solver_str;
@@ -103,6 +105,10 @@ class PlannerROS
     // Services
     ros::ServiceClient estop_client;
     ros::ServiceClient _mpc_backup_client;
+
+#ifdef MRS_MSGS_FOUND
+    ros::ServiceClient _mrs_traj_client;
+#endif
 
     // Subscribers
     ros::Subscriber mapSub;
@@ -181,6 +187,7 @@ class PlannerROS
     double _inflate_radius;
     double _min_turn_clearance;
     double _trigger_trim_dist;
+    double _flying_height;
 
     int _n_polys;
     int _max_polys;

@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <launch>
 
-    <arg name="barn" default="true" />
+    <arg name="barn" default="false" />
     <arg name="barn_dist" default="10.0" />
     <!--<arg name="barn_dist" default="3.5" />-->
     <!--<arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />-->
 
-    <rosparam file="$(find robust_fast_navigation)/params/planner.yaml" command="load" ns="robust_planner/" />
-    <rosparam file="$(find robust_fast_navigation)/params/robo_params.yaml" command="load" ns="robust_planner/" />
+    <rosparam file="$(find robust_fast_navigation)/params/planner_uav.yaml" command="load" ns="robust_planner/" />
+    <rosparam file="$(find robust_fast_navigation)/params/uav_params.yaml" command="load" ns="robust_planner/" />
 
     <!--<node name="robust_planner" pkg="cbf_tracking" type="planner" 
            launch-prefix="lldb" output="screen">  -->
@@ -16,15 +16,15 @@
         <param name="is_barn" value="$(arg barn)" />
         <param name="barn_goal_dist" value="$(arg barn_dist)" />
         
-        <remap from="/planner_goal" to="/move_base_simple/goal" />
-        <remap from="/odometry/filtered" to="/gmapping/odometry" />
+        <remap from="/planner_goal" to="/goal" />
+        <remap from="/odometry/filtered" to="/uav1/estimation_manager/odom_main" />
         <!--<remap from="/reference_trajectory" to="raw_trajectory" />-->
     </node>
 
   <!--<node name="safety_node" pkg="robust_fast_navigation" type="safety_node" output="screen"/>-->
 
     <!-- <include file="$(find slam_toolbox)/launch/online_async.launch"/> -->
-    <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
-    <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
+    <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params_uav.yaml" command="load" ns="robust_planner/local_costmap/" />
 
 </launch>
+

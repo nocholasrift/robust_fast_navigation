@@ -10,6 +10,10 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
+#ifdef MRS_MSGS_FOUND
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+#endif
+
 #include <cmath>
 #include <iterator>
 #include <string>
@@ -38,6 +42,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/traj_dt", _traj_dt, .1);
     nh.param("robust_planner/is_barn", _is_barn, false);
     nh.param("robust_planner/teleop", _is_teleop, false);
+    nh.param("robust_planner/is_drone", _is_drone, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
     nh.param("robust_planner/max_deviation", _max_dev, 1.);
     nh.param("robust_planner/planner_frequency", _dt, .1);
@@ -119,6 +124,15 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
 
     // Services
     estop_client = nh.serviceClient<std_srvs::Empty>("/switch_mode");
+
+    // topic is: /uav1/control_manager/velocity_reference
+    // msg type is mrs_msgs/VelocityReferenceStamped
+#ifdef MRS_MSGS_FOUND
+    nh.param("robust_planner/use_mpc", _use_mpc, true);
+
+    _mrs_traj_client = nh.serviceClient<mrs_msgs::TrajectoryReferenceSrv>(
+        "/uav1/control_manager/trajectory_reference");
+#endif
 
     // Subscribers
     mapSub          = nh.subscribe("/map", 1, &PlannerROS::mapcb, this);
@@ -337,6 +351,8 @@ void PlannerROS::odomcb(const nav_msgs::Odometry::ConstPtr &msg)
     _odom(0) = msg->pose.pose.position.x;
     _odom(1) = msg->pose.pose.position.y;
     _odom(2) = yaw;
+
+    if (_is_drone) _flying_height = msg->pose.pose.position.z;
 
     if (_is_barn && !_is_goal_set)
     {
@@ -634,17 +650,6 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     }
 
     ROS_INFO("full planning time is %.4f", (ros::Time::now() - start).toSec());
-
-    // if (count >= _failsafe_count)
-    // {
-    //     if (plan(true))
-    //     {
-    //         count = 0;
-    //         _curr_horizon /= .9;
-    //     }
-    //     else
-    //         _curr_horizon *= .9;
-    // }
 }
 
 /**********************************************************************
@@ -693,14 +698,19 @@ bool PlannerROS::plan(bool is_failsafe)
     else if (mpcHorizon.points.size() == 0 &&
              !_use_arclen)  // use trajectory for init point if no horizon
     {
+        ROS_INFO("trying to initialize PVAJ using sentTraj");
         double t = (a - start).toSec() + _lookahead;
 
         int trajInd = std::min((int)(t / _traj_dt), (int)sentTraj.points.size() - 1);
+
+        ROS_INFO("trajInd: %d", trajInd);
+        ROS_INFO("size: %lu", sentTraj.points.size());
 
         trajectory_msgs::JointTrajectoryPoint p = sentTraj.points[trajInd];
 
         p_start_t = p.time_from_start.toSec();
 
+        ROS_INFO("making point stamped");
         geometry_msgs::PointStamped poseMsg;
         poseMsg.header.frame_id = _frame_str;
         poseMsg.header.stamp    = ros::Time::now();
@@ -708,6 +718,7 @@ bool PlannerROS::plan(bool is_failsafe)
         poseMsg.point.y         = p.positions[1];
         poseMsg.point.z         = p.positions[2];
         initPointPub.publish(poseMsg);
+        ROS_INFO("done");
 
         // position
         initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], p.positions[1], p.positions[2]);
@@ -718,6 +729,8 @@ bool PlannerROS::plan(bool is_failsafe)
         // acceleration
         initialPVAJ.col(2) =
             Eigen::Vector3d(p.accelerations[0], p.accelerations[1], p.accelerations[2]);
+
+        ROS_INFO("done with position stuff :)");
 
         // jerk (stored in effort)
         initialPVAJ.col(3) = Eigen::Vector3d(p.effort[0], p.effort[1], p.effort[2]);
@@ -861,24 +874,25 @@ bool PlannerROS::plan(bool is_failsafe)
 
     if (_prev_plan_status)
     {
-        mpcHorizon.points.clear();
-        std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
-
-        sentTraj.points.clear();
-        for (rfn_state_t &x : arclen_traj)
+        if (_use_arclen)
         {
-            // time from start is actually arc len in this case...
-            trajectory_msgs::JointTrajectoryPoint p;
-            p.positions.push_back(x.pos(0));
-            p.positions.push_back(x.pos(1));
-            p.velocities.push_back(x.vel(0));
-            p.velocities.push_back(x.vel(1));
-            p.time_from_start = ros::Duration(x.t);
+            mpcHorizon.points.clear();
+            std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
 
-            sentTraj.points.push_back(p);
+            sentTraj.points.clear();
+            for (rfn_state_t &x : arclen_traj)
+            {
+                // time from start is actually arc len in this case...
+                trajectory_msgs::JointTrajectoryPoint p;
+                p.positions.push_back(x.pos(0));
+                p.positions.push_back(x.pos(1));
+                p.velocities.push_back(x.vel(0));
+                p.velocities.push_back(x.vel(1));
+                p.time_from_start = ros::Duration(x.t);
+
+                sentTraj.points.push_back(p);
+            }
         }
-
-        /*visualizeTraj();*/
 
         if (!_is_teleop) trajPub.publish(sentTraj);
         return false;
@@ -904,39 +918,8 @@ bool PlannerROS::plan(bool is_failsafe)
         sentTraj.header.stamp    = ros::Time::now();
         sentTraj.header.frame_id = _frame_str;
 
-        /*double t1    = std::round((ros::Time::now() - a).toSec() * 10.) / 10.;*/
-        /*double t2    = std::round(_lookahead * 10.) / 10.;*/
-        /*int startInd = std::min((int)(t1 / _mpc_dt), (int)mpcHorizon.points.size() - 1) + 1;*/
-        /*int trajInd  = std::min((int)(t2 / _mpc_dt), (int)mpcHorizon.points.size() - 1);*/
-        /**/
-        /*trajectory_msgs::JointTrajectory mpc_segment;*/
-        /*for (int i = startInd; i < trajInd; ++i)*/
-        /*{*/
-        /*    mpc_segment.points.push_back(mpcHorizon.points[i]);*/
-        /*}*/
-
-        // std::vector<double> ss, xs, ys;
-        // bool reparam_status = reparam_traj(ss, xs, ys, mpc_segment);
-
-        double s_offset = 0;
-        // if (reparam_status)
-        // {
-        //     s_offset = ss.back();
-        //     ROS_INFO("SOFFEST IS %.2f", s_offset);
-        //     for (int i = 0; i < ss.size()-1; ++i)
-        //     {
-        //         trajectory_msgs::JointTrajectoryPoint p;
-        //         p.positions.push_back(xs[i]);
-        //         p.positions.push_back(ys[i]);
-        //         p.time_from_start = ros::Duration(ss[i]);
-
-        //         sentTraj.points.push_back(p);
-        //     }
-        // }
-
+        double s_offset                      = 0;
         std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
-        /*_occ_grid->push_trajectory(arclen_traj);*/
-        /*ROS_WARN("PUSHING TRAJECTORY");*/
 
         for (rfn_state_t &x : arclen_traj)
         {
@@ -954,9 +937,6 @@ bool PlannerROS::plan(bool is_failsafe)
     }
     else if (sentTraj.points.size() != 0)
     {
-        // ROS_INFO("[%.2f] t1 is %.2f\tt2 is %.2f",
-        // (ros::Time::now()-start).toSec(),t1, t2);
-
         int startInd, trajInd;
         trajectory_msgs::JointTrajectory aTraj, bTraj;
         bTraj = convertTrajToMsg(planned_trajectory, _traj_dt, _frame_str);
@@ -1042,10 +1022,28 @@ bool PlannerROS::plan(bool is_failsafe)
         }
     }
 
+#ifdef MRS_MSGS_FOUND
+    if (_is_drone && !_use_mpc)
+    {
+        mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference =
+            convert_traj_to_mrs_srv(sentTraj, _frame_str, _flying_height);
+        bool srv_status = _mrs_traj_client.call(srv_trajectory_reference);
+
+        if (!srv_status)
+        {
+            ROS_ERROR("Failed to call mrs_traj_client");
+            return false;
+        }
+        else if (!srv_trajectory_reference.response.success)
+            ROS_ERROR("Service call for trajectory reference failed %s",
+                      srv_trajectory_reference.response.message.c_str());
+    }
+#endif
+
     if (!_is_teleop) trajPub.publish(sentTraj);
 
-    /*visualizeTraj();*/
-    publishCPS();
+    visualizeTraj();
+    /*publishCPS();*/
 
     _planned = true;
     mpcHorizon.points.clear();
