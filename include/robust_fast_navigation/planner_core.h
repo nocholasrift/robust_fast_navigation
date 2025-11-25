@@ -8,85 +8,87 @@
 #include <robust_fast_navigation/map_util.h>
 #include <robust_fast_navigation/spline.h>
 
-class SplineWrapper
-{
-   public:
-    tk::spline spline;  // Expose the tk::spline
+class SplineWrapper {
+public:
+  tk::spline spline; // Expose the tk::spline
 };
 typedef SplineWrapper spline_t;
 
-enum PlannerStatus
-{
-    SUCCESS           = 0,
-    MISC_FAILURE      = 1,
-    JPS_FAIL_NO_PATH  = 2,
-    START_IN_OBSTACLE = 3,
-    CORRIDOR_FAIL     = 4,
-    TRAJ_GEN_FAIL     = 5,
+enum PlannerStatus {
+  SUCCESS = 0,
+  MISC_FAILURE = 1,
+  JPS_FAIL_NO_PATH = 2,
+  START_IN_OBSTACLE = 3,
+  CORRIDOR_FAIL = 4,
+  TRAJ_GEN_FAIL = 5,
 };
 
-class Planner
-{
-   public:
-    Planner();
-    ~Planner();
+class Planner {
+public:
+  Planner();
+  ~Planner();
 
-    void set_params(const planner_params_t &params);
+  void set_params(const planner_params_t &params);
 
-    // setters
+  // setters
 
-    void set_start(const Eigen::MatrixXd &start);
-    void set_goal(const Eigen::MatrixXd &goal);
-    void set_costmap(const map_util::occupancy_grid_t &map);
+  void set_start(const Eigen::MatrixXd &start);
+  void set_goal(const Eigen::MatrixXd &goal);
+  void set_costmap(const map_util::occupancy_grid_t &map);
 
-    // #ifdef FOUND_PYBIND11
-    // void set_start(const Eigen::MatrixXd& start);
-    // void set_goal(const Eigen::MatrixXd& goal);
-    // void set_costmap(const std::shared_ptr<costmap_2d::Costmap2D>& map);
-    // #endif
+  // #ifdef FOUND_PYBIND11
+  // void set_start(const Eigen::MatrixXd& start);
+  // void set_goal(const Eigen::MatrixXd& goal);
+  // void set_costmap(const std::shared_ptr<costmap_2d::Costmap2D>& map);
+  // #endif
 
-    // getters
-    std::vector<Eigen::Vector3d> get_cps();
-    std::vector<rfn_state_t> get_trajectory();
-    std::vector<rfn_state_t> get_arclen_traj();
+  // getters
+  std::vector<Eigen::Vector3d> get_cps();
+  std::vector<rfn_state_t> get_trajectory();
+  std::vector<rfn_state_t> get_arclen_traj();
 
-    // std::vector<spline_t> get_tube();
+  std::vector<rfn_state_t>
+  get_arclen_traj(const std::vector<rfn_state_t> &traj);
 
-    // Eigen::Matrix3Xd get_corridor_boundary();
+  // std::vector<spline_t> get_tube();
 
-    PlannerStatus plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
-                       std::vector<Eigen::MatrixX4d> &hPolys);
+  // Eigen::Matrix3Xd get_corridor_boundary();
 
-    std::vector<Eigen::Vector2d> getJPSInFree(const std::vector<Eigen::Vector2d> &path);
-    bool JPSIntersectObs(const std::vector<Eigen::Vector2d> &path);
+  PlannerStatus plan(double horizon, std::vector<Eigen::Vector2d> &jpsPath,
+                     std::vector<Eigen::MatrixX4d> &hPolys);
 
-   private:
-    Eigen::MatrixXd _old_goal;
-    Eigen::MatrixXd _start;
-    Eigen::MatrixXd _goal;
-    Eigen::Matrix3Xd _corridor_boundary;
+  std::vector<Eigen::Vector2d>
+  getJPSInFree(const std::vector<Eigen::Vector2d> &path);
+  bool JPSIntersectObs(const std::vector<Eigen::Vector2d> &path);
 
-    // Polygon_2 _cgal_border;
+private:
+  Eigen::MatrixXd _old_goal;
+  Eigen::MatrixXd _start;
+  Eigen::MatrixXd _goal;
+  Eigen::Matrix3Xd _corridor_boundary;
 
-    bool _is_occ;
-    bool _is_map_set;
-    bool _is_goal_set;
-    bool _simplify_jps;
-    bool _plan_in_free;
-    bool _is_start_set;
-    bool _prev_plan_status;
+  // Polygon_2 _cgal_border;
 
-    std::unique_ptr<SolverBase> _solver;
-    std::vector<rfn_state_t> _traj;
+  bool _is_occ;
+  bool _is_map_set;
+  bool _is_goal_set;
+  bool _simplify_jps;
+  bool _plan_in_free;
+  bool _is_start_set;
+  bool _prev_plan_status;
 
-    int _trim_count;
+  std::unique_ptr<SolverBase> _solver;
+  std::vector<rfn_state_t> _traj;
 
-    planner_params_t _params;
+  int _trim_count;
 
-    map_util::occupancy_grid_t _map;
+  planner_params_t _params;
 
-    double binary_search(double dl, double start, double end, double tolerance);
-    double compute_arclen(double t0, double tf);
-    bool reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
-                      std::vector<double> &ys);
+  map_util::occupancy_grid_t _map;
+
+  double binary_search(double dl, double start, double end, double tolerance);
+  double compute_arclen(double t0, double tf);
+  bool reparam_traj(const std::vector<rfn_state_t> &traj,
+                    std::vector<double> &ss, std::vector<double> &xs,
+                    std::vector<double> &ys);
 };
