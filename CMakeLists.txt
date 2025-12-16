@@ -17,14 +17,11 @@ add_compile_options(-std=c++17 -O3)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+find_package(pybind11 QUIET)
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
-
-# Using GUROBI_LIBRARY on it's own isn't enough to get things to compile...
-# Snippet taken from https://github.com/mit-acl/faster/blob/master/faster/CMakeLists.txt
-FILE(GLOB GurobiSOFiles $ENV{GUROBI_HOME}/lib/libgurobi*[0-9]*.so) #files that are start with libgurobi and end with number.so
-set(GUROBI_LIBRARIES "$ENV{GUROBI_HOME}/lib/libgurobi_c++.a;${GurobiSOFiles};" )
+find_package(GUROBI REQUIRED)
 
 include_directories(
   include
@@ -54,6 +51,26 @@ add_library(planner_lib
 target_link_libraries(planner_lib
   ${PLANNER_LIBS}
 )
+
+if (pybind11_FOUND)
+  add_definitions(-DFOUND_PYBIND11)
+
+  # find_package(PythonLibs REQUIRED)
+  # include_directories(${PYTHON_INCLUDE_DIRS})
+  find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+  include_directories(${Python3_INCLUDE_DIRS})
+
+  pybind11_add_module(py_planner
+    src/py_planner.cpp
+  )
+
+  target_link_libraries(py_planner
+    PRIVATE
+    planner_lib
+    ${PLANNER_LIBS}
+  )
+
+endif()
 
 if (ROS_VERSION EQUAL 1)
 ## Find catkin macros and libraries
@@ -131,24 +148,24 @@ if (ROS_VERSION EQUAL 1)
     ${ROS_PLANNER_LIBS}
   )
 
-  add_executable(plan_through_map
-    src/JPS.cpp
-    src/solver.cpp
-    src/rfn_types.cpp
-    src/planner_core.cpp
-    src/plan_through_map.cpp
-    src/faster_wrapper.cpp
-    src/gcopter_wrapper.cpp
-  )
-  target_link_libraries(plan_through_map
-    ${PLANNER_LIBS}
-  )
+  # add_executable(plan_through_map
+  #   src/JPS.cpp
+  #   src/solver.cpp
+  #   src/rfn_types.cpp
+  #   src/planner_core.cpp
+  #   src/plan_through_map.cpp
+  #   src/faster_wrapper.cpp
+  #   src/gcopter_wrapper.cpp
+  # )
+  # target_link_libraries(plan_through_map
+  #   ${PLANNER_LIBS}
+  # )
 
-  add_executable(safety_node
-      src/safety_node.cpp
-  )
-  target_link_libraries(safety_node
-      ${catkin_LIBRARIES}
-      Eigen3::Eigen
-  )
+  # add_executable(safety_node
+  #     src/safety_node.cpp
+  # )
+  # target_link_libraries(safety_node
+  #     ${catkin_LIBRARIES}
+  #     Eigen3::Eigen
+  # )
 endif()

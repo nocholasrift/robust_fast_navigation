@@ -1,7 +1,5 @@
 #pragma once
 
-#include <costmap_2d/cost_values.h>
-#include <costmap_2d/costmap_2d.h>
 #include <robust_fast_navigation/contour_solver.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/faster_wrapper.h>
@@ -14,13 +12,13 @@ public:
 };
 typedef SplineWrapper spline_t;
 
-enum PlannerStatus {
+enum class PlannerStatus {
   SUCCESS = 0,
-  MISC_FAILURE = 1,
-  JPS_FAIL_NO_PATH = 2,
-  START_IN_OBSTACLE = 3,
-  CORRIDOR_FAIL = 4,
-  TRAJ_GEN_FAIL = 5,
+  MISC_FAILURE,
+  JPS_FAIL_NO_PATH,
+  START_IN_OBSTACLE,
+  CORRIDOR_FAIL,
+  TRAJ_GEN_FAIL,
 };
 
 class Planner {
@@ -28,7 +26,7 @@ public:
   Planner();
   ~Planner();
 
-  void set_params(const planner_params_t &params);
+  void set_params(const planner_params &params);
 
   // setters
 

@@ -3,10 +3,10 @@
 #include <robust_fast_navigation/rfn_types.h>
 
 #include <Eigen/Core>
-#include <boost/variant/variant.hpp>
+// #include <boost/variant/variant.hpp>
 // #include <grid_map_ros/GridMapRosConverter.hpp>
 // #include <grid_map_ros/grid_map_ros.hpp>
-#include <grid_map_sdf/SignedDistance2d.hpp>
+// #include <grid_map_sdf/SignedDistance2d.hpp>
 #include <unordered_set>
 #include <vector>
 
@@ -14,7 +14,7 @@ namespace map_util {
 // struct mimicing nav_msgs::OccupancyGrid
 class OccupancyGrid {
 private:
-  unsigned char *data;
+  std::vector<unsigned char> data;
   int width;
   int height;
   double resolution;
@@ -27,9 +27,9 @@ private:
   int reset_counter;
 
   std::vector<unsigned char> occupied_values;
+  std::vector<unsigned char> no_information_values;
 
   std::unordered_set<uint64_t> known_occupied_inds;
-  std::vector<Eigen::Vector2d> occupied_points;
 
 public:
   Eigen::MatrixXd _sdf;
@@ -40,7 +40,6 @@ public:
     resolution = 0.0;
     origin_x = 0.0;
     origin_y = 0.0;
-    data = nullptr;
 
     resized = false;
     use_sdf = false;
@@ -48,15 +47,20 @@ public:
   }
 
   OccupancyGrid(int w, int h, double res, double ox, double oy,
-                unsigned char *d, const std::vector<unsigned char> &ov) {
+                const std::vector<unsigned char> &d,
+                const std::vector<unsigned char> &ov,
+                const std::vector<unsigned char> &niv) {
+
     width = w;
     height = h;
     resolution = res;
     origin_x = ox;
     origin_y = oy;
-    data = d;
     occupied_values = ov;
+    no_information_values = niv;
     reset_counter = 0;
+
+    data = d;
 
     update_occupied_obstacles();
 
@@ -64,8 +68,30 @@ public:
     this->use_sdf = false;
   }
 
-  void update(int w, int h, double res, double ox, double oy, unsigned char *d,
-              const std::vector<unsigned char> &ov) {
+  OccupancyGrid(int w, int h, double res, double ox, double oy,
+                unsigned char *d, const std::vector<unsigned char> &ov,
+                const std::vector<unsigned char> &niv) {
+    width = w;
+    height = h;
+    resolution = res;
+    origin_x = ox;
+    origin_y = oy;
+    occupied_values = ov;
+    no_information_values = niv;
+    reset_counter = 0;
+
+    data = std::vector<unsigned char>(d, d + (w * h));
+
+    update_occupied_obstacles();
+
+    resized = false;
+    this->use_sdf = false;
+  }
+
+  void update(int w, int h, double res, double ox, double oy,
+              const std::vector<unsigned char> &d,
+              const std::vector<unsigned char> &ov,
+              const std::vector<unsigned char> &niv) {
     if (w != width || h != height || origin_x != ox || origin_y != oy ||
         reset_counter++ > 10) {
       std::cout
@@ -82,35 +108,35 @@ public:
     origin_x = ox;
     origin_y = oy;
     occupied_values = ov;
+    no_information_values = niv;
     data = d;
 
     update_occupied_obstacles();
+  }
 
-    Eigen::Matrix<unsigned char, -1, -1, Eigen::RowMajor> cost_mat(height,
-                                                                   width);
-    memcpy(cost_mat.data(), data, width * height * sizeof(unsigned char));
+  void update(int w, int h, double res, double ox, double oy, unsigned char *d,
+              const std::vector<unsigned char> &ov,
+              const std::vector<unsigned char> &niv) {
+    if (w != width || h != height || origin_x != ox || origin_y != oy ||
+        reset_counter++ > 10) {
+      std::cout
+          << "[OccupancyGrid] Costmap metadata changed, updating occupancies"
+          << std::endl;
+      // reset cache since map has changed geometry
+      known_occupied_inds.clear();
+      reset_counter = 0;
+    }
 
-    auto start = std::chrono::high_resolution_clock::now();
-    // ov[0] will have the most permissive obstacle type, use that for avoidance
-    Eigen::Matrix<bool, -1, -1, Eigen::RowMajor> binary_map =
-        cost_mat.array() >= ov[0];
-    /*std::cout << "[OccupancyGrid] bitmap took "*/
-    /*          << std::chrono::duration_cast<std::chrono::milliseconds>(*/
-    /*                 std::chrono::high_resolution_clock::now() - start)*/
-    /*                 .count()*/
-    /*          << "ms" << std::endl;*/
+    width = w;
+    height = h;
+    resolution = res;
+    origin_x = ox;
+    origin_y = oy;
+    occupied_values = ov;
+    no_information_values = niv;
+    data = std::vector<unsigned char>(d, d + (w * h));
 
-    start = std::chrono::high_resolution_clock::now();
-    if (use_sdf)
-      _sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(
-                 binary_map, resolution)
-                 .cast<double>();
-
-    /*std::cout << "[OccupancyGrid] sdf took "*/
-    /*          << std::chrono::duration_cast<std::chrono::milliseconds>(*/
-    /*                 std::chrono::high_resolution_clock::now() - start)*/
-    /*                 .count()*/
-    /*          << "ms" << std::endl;*/
+    update_occupied_obstacles();
   }
 
   // std::vector<double> clamp_point_to_bounds(const std::vector<double>& goal)
@@ -151,72 +177,23 @@ public:
       return t_min <= t_max;
     };
 
+    std::cout << "updating\n";
     if (!update_t(current[0], dx, x_min, x_max))
       return current;
     if (!update_t(current[1], dy, y_min, y_max))
       return current;
+    std::cout << "done\n";
 
     int count = 0;
     t_max *= epsilon;
 
+    std::cout << "occupancy testing\n";
     while (is_occupied(current[0] + (t_max * epsilon) * dx,
                        current[1] + (t_max * epsilon) * dy, "inflated") &&
            count++ < 10)
       t_max *= epsilon;
 
     return {current[0] + (t_max)*dx, current[1] + (t_max)*dy};
-  }
-
-  void generate_sdf() {
-    Eigen::Matrix<unsigned char, -1, -1, Eigen::RowMajor> cost_mat(height,
-                                                                   width);
-    memcpy(cost_mat.data(), data, width * height * sizeof(unsigned char));
-    Eigen::Matrix<bool, -1, -1, Eigen::RowMajor> binary_map =
-        cost_mat.array() >= occupied_values[0];
-
-    _sdf = grid_map::signed_distance_field::signedDistanceFromOccupancy(
-               binary_map, resolution)
-               .cast<double>();
-
-    // in case user manually calls this
-    this->use_sdf = true;
-  }
-
-  double get_signed_dist(double x, double y) const {
-    if (!use_sdf)
-      throw std::invalid_argument(
-          "[get_signed_distance] SDF not generated, use_sdf is false");
-
-    std::vector<unsigned int> cells = world_to_map(x, y);
-    unsigned int mx = cells[0];
-    unsigned int my = cells[1];
-    if (mx >= width || my >= height)
-      throw std::invalid_argument(
-          "[get_signed_distance] mx or my is greater than width or height");
-
-    /*std::cout << "getting signed distance!" << std::endl;*/
-    /*std::cout << "mx: " << mx << " my: " << my << std::endl;*/
-    /*std::cout << "widht: " << _sdf.rows() << " height: " << _sdf.cols() <<
-     * std::endl;*/
-    return _sdf(my, mx);
-  }
-
-  std::vector<double> get_dist_grad(double x, double y) const {
-    if (!use_sdf)
-      throw std::invalid_argument(
-          "[get_signed_distance] SDF not generated, use_sdf is false");
-
-    const double eps = resolution + 1e-2;
-
-    double dx = (get_signed_dist(x + eps, y) - get_signed_dist(x - eps, y)) /
-                (2.0 * eps);
-    double dy = (get_signed_dist(x, y + eps) - get_signed_dist(x, y - eps)) /
-                (2.0 * eps);
-
-    Eigen::Vector2d grad(dx, dy);
-    grad.normalize();
-
-    return {grad[0], grad[1]};
   }
 
   // define these functions with vectors so we can pybind them more easily
@@ -278,7 +255,7 @@ public:
     return my * width + mx;
   }
 
-  unsigned char *get_data() const { return data; }
+  const unsigned char *get_data() const { return data.data(); }
 
   unsigned char get_cost(double x, double y, const std::string &layer) const {
     std::vector<unsigned int> cells = world_to_map(x, y);
@@ -311,6 +288,21 @@ public:
     return data[index];
   }
 
+  unsigned char get_cost(unsigned int index, const std::string &layer) {
+    if (layer == "inflated")
+      return data[index];
+    else if (layer == "obstacles") {
+      if (data[index] == occupied_values[0])
+        return 0;
+      return data[index];
+    } else {
+      std::string err = "[get_cost] layer not found: " + layer;
+      throw std::invalid_argument(err);
+    }
+
+    return data[index];
+  }
+
   bool is_occupied(double x, double y, const std::string &layer) const {
     std::vector<unsigned int> cells = world_to_map(x, y);
     return is_occupied(cells[0], cells[1], layer);
@@ -328,9 +320,14 @@ public:
   }
 
   bool raycast(unsigned int sx, unsigned int sy, unsigned int ex,
-               unsigned int ey, double &x, double &y,
-               const std::vector<unsigned char> &test_val,
-               const std::string &layer, unsigned int max_range = 1e6) {
+               unsigned int ey, double &x, double &y, const std::string &layer,
+               std::vector<unsigned char> *test_val = nullptr,
+               unsigned int max_range = 1e6) {
+
+    if (!test_val) {
+      test_val = &occupied_values;
+    }
+
     bool ray_hit = false;
     unsigned int size_x = width;
 
@@ -353,12 +350,12 @@ public:
       int error_y = abs_dx / 2;
       ray_hit =
           bresenham(abs_dx, abs_dy, error_y, offset_dx, offset_dy, offset,
-                    (unsigned int)(scale * abs_dx), term, layer, test_val);
+                    (unsigned int)(scale * abs_dx), term, layer, *test_val);
     } else {
       int error_x = abs_dy / 2;
       ray_hit =
           bresenham(abs_dy, abs_dx, error_x, offset_dy, offset_dx, offset,
-                    (unsigned int)(scale * abs_dy), term, layer, test_val);
+                    (unsigned int)(scale * abs_dy), term, layer, *test_val);
     }
 
     // convert costmap index to world coordinates
@@ -465,43 +462,52 @@ public:
               << " occupied cells " << std::endl;
   }
 
-  void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist = .1,
-                       int max_iters = 100) {
-    if (!use_sdf)
-      throw std::invalid_argument(
-          "[get_signed_distance] SDF not generated, use_sdf is false");
-
-    double step_size = resolution / 2.0;
-    for (rfn_state_t &x : traj) {
-      // perform gradient descent on point if it is too close to obstacles
-      double dist;
-      try {
-        dist = get_signed_dist(x.pos(0), x.pos(1));
-      } catch (...) {
-        return;
-      }
-      Eigen::Vector2d p = x.pos.head(2);
-      if (dist < thresh_dist) {
-        for (int i = 0; i < max_iters && dist < thresh_dist; ++i) {
-          // get normalized gradient vector to obstacle
-          std::vector<double> d = get_dist_grad(p(0), p(1));
-          Eigen::Vector2d grad = {d[0], d[1]};
-          try {
-            Eigen::Vector2d tmp = p + step_size * grad;
-            dist = get_signed_dist(tmp[0], tmp[1]);
-          } catch (...) {
-            x.pos.head(2) = p;
-            return;
-          }
-
-          p = p + step_size * grad;
-        }
-
-        // update trajectory
-        x.pos.head(2) = p;
-      }
-    }
+  std::vector<unsigned char> get_occupied_values() const {
+    return occupied_values;
   }
+
+  std::vector<unsigned char> get_no_info_values() const {
+    return no_information_values;
+  }
+
+  // void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist =
+  // .1,
+  //                      int max_iters = 100) {
+  //   if (!use_sdf)
+  //     throw std::invalid_argument(
+  //         "[get_signed_distance] SDF not generated, use_sdf is false");
+  //
+  //   double step_size = resolution / 2.0;
+  //   for (rfn_state_t &x : traj) {
+  //     // perform gradient descent on point if it is too close to obstacles
+  //     double dist;
+  //     try {
+  //       dist = get_signed_dist(x.pos(0), x.pos(1));
+  //     } catch (...) {
+  //       return;
+  //     }
+  //     Eigen::Vector2d p = x.pos.head(2);
+  //     if (dist < thresh_dist) {
+  //       for (int i = 0; i < max_iters && dist < thresh_dist; ++i) {
+  //         // get normalized gradient vector to obstacle
+  //         std::vector<double> d = get_dist_grad(p(0), p(1));
+  //         Eigen::Vector2d grad = {d[0], d[1]};
+  //         try {
+  //           Eigen::Vector2d tmp = p + step_size * grad;
+  //           dist = get_signed_dist(tmp[0], tmp[1]);
+  //         } catch (...) {
+  //           x.pos.head(2) = p;
+  //           return;
+  //         }
+  //
+  //         p = p + step_size * grad;
+  //       }
+  //
+  //       // update trajectory
+  //       x.pos.head(2) = p;
+  //     }
+  //   }
+  // }
 };
 typedef OccupancyGrid occupancy_grid_t;
 

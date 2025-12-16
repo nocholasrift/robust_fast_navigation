@@ -24,98 +24,98 @@
 
 #include "gcopter/gcopter.hpp"
 
-class Planner
-{
-   public:
-    Planner(ros::NodeHandle& nh);
+class Planner {
+public:
+  Planner(ros::NodeHandle &nh);
 
-    void visualizeTraj();
-    bool plan(bool is_failsafe = false);
-    void spin();
+  void visualizeTraj();
+  bool plan(bool is_failsafe = false);
+  void spin();
 
-   protected:
-    robust_fast_navigation::SolverState solver_state;
+protected:
+  robust_fast_navigation::SolverState solver_state;
 
-   private:
-    // callbacks
-    void odomcb(const nav_msgs::Odometry::ConstPtr& msg);
-    void globalPathcb(const nav_msgs::Path::ConstPtr& msg);
-    void mapcb(const nav_msgs::OccupancyGrid::ConstPtr& msg);
-    void lasercb(const sensor_msgs::LaserScan::ConstPtr& msg);
-    void goalcb(const geometry_msgs::PoseStamped::ConstPtr& msg);
-    void clickedPointcb(const geometry_msgs::PointStamped::ConstPtr& msg);
+private:
+  // callbacks
+  void odomcb(const nav_msgs::Odometry::ConstPtr &msg);
+  void globalPathcb(const nav_msgs::Path::ConstPtr &msg);
+  void mapcb(const nav_msgs::OccupancyGrid::ConstPtr &msg);
+  void lasercb(const sensor_msgs::LaserScan::ConstPtr &msg);
+  void goalcb(const geometry_msgs::PoseStamped::ConstPtr &msg);
+  void clickedPointcb(const geometry_msgs::PointStamped::ConstPtr &msg);
 
-    // timers
-    void goalLoop(const ros::TimerEvent&);
-    void controlLoop(const ros::TimerEvent&);
-    void publishOccupied(const ros::TimerEvent&);
+  // timers
+  void goalLoop(const ros::TimerEvent &);
+  void controlLoop(const ros::TimerEvent &);
+  void publishOccupied(const ros::TimerEvent &);
 
-    // utilities
-    void pubPolys();
-    void pubCurrPoly();
-    void projectIntoMap(const Eigen::Vector2d& goal);
+  // utilities
+  void pubPolys();
+  void pubCurrPoly();
+  void projectIntoMap(const Eigen::Vector2d &goal);
 
-    template <int D>
-    trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D>& traj);
+  template <int D>
+  trajectory_msgs::JointTrajectory convertTrajToMsg(const Trajectory<D> &traj);
 
-    Eigen::VectorXd _odom, _vel, goal;
+  Eigen::VectorXd _odom, _vel, goal;
 
-    vec_Vec2f _obs;
+  vec_Vec2f _obs;
 
-    bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset, _plan_once,
-        _simplify_jps, _is_costmap_started, _map_received, _is_barn, _plan_in_free, _planned;
+  bool _is_init, _started_costmap, _is_goal_set, _is_teleop, _is_goal_reset,
+      _plan_once, _simplify_jps, _is_costmap_started, _map_received, _is_barn,
+      _plan_in_free, _planned;
 
-    std::string _frame_str;
+  std::string _frame_str;
 
-    trajectory_msgs::JointTrajectory sentTraj;
+  trajectory_msgs::JointTrajectory sentTraj;
 
-    ros::Time start;
-    ros::Timer controlTimer, goalTimer, publishTimer;
-    ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
+  ros::Time start;
+  ros::Timer controlTimer, goalTimer, publishTimer;
+  ros::Subscriber laserSub, odomSub, pathSub, goalSub, clickedPointSub, mapSub;
 
-    ros::Publisher trajVizPub;
-    ros::Publisher wptVizPub;
-    ros::Publisher trajPub;
-    ros::Publisher trajPubNoReset;
-    ros::Publisher meshPub;
-    ros::Publisher edgePub;
-    ros::Publisher helperMeshPub;
-    ros::Publisher helperEdgePub;
-    ros::Publisher intGoalPub;
-    ros::Publisher goalPub;
-    ros::Publisher paddedLaserPub;
-    ros::Publisher jpsPub;
-    ros::Publisher jpsPubFree;
-    ros::Publisher jpsPointsPub;
-    ros::Publisher currPolyPub;
-    ros::Publisher initPointPub;
-    ros::Publisher corridorPub;
-    ros::Publisher helperPolyPub;
-    ros::Publisher solverStatePub;
+  ros::Publisher trajVizPub;
+  ros::Publisher wptVizPub;
+  ros::Publisher trajPub;
+  ros::Publisher trajPubNoReset;
+  ros::Publisher meshPub;
+  ros::Publisher edgePub;
+  ros::Publisher helperMeshPub;
+  ros::Publisher helperEdgePub;
+  ros::Publisher intGoalPub;
+  ros::Publisher goalPub;
+  ros::Publisher paddedLaserPub;
+  ros::Publisher jpsPub;
+  ros::Publisher jpsPubFree;
+  ros::Publisher jpsPointsPub;
+  ros::Publisher currPolyPub;
+  ros::Publisher initPointPub;
+  ros::Publisher corridorPub;
+  ros::Publisher helperPolyPub;
+  ros::Publisher solverStatePub;
 
-    costmap_2d::Costmap2DROS *local_costmap, *global_costmap;
-    std::vector<Eigen::Vector2d> astarPath;
-    std::vector<Eigen::Vector2d> _prev_jps_path;
+  costmap_2d::Costmap2DROS *local_costmap, *global_costmap;
+  std::vector<Eigen::Vector2d> astarPath;
+  std::vector<Eigen::Vector2d> _prev_jps_path;
 
-    std::vector<Eigen::MatrixX4d> hPolys;
+  std::vector<Eigen::MatrixX4d> hPolys;
 
-    Trajectory<5> traj;
+  Trajectory<5> traj;
 
-    const double JACKAL_MAX_VEL = 1.0;
-    double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, _prev_jps_cost,
-        _max_dist_horizon, _barn_goal_dist;
+  const double JACKAL_MAX_VEL = 1.0;
+  double _max_vel, _dt, _const_factor, _lookahead, _traj_dt, _prev_jps_cost,
+      _max_dist_horizon, _barn_goal_dist;
 
-    int _failsafe_count;
+  int _failsafe_count;
 
-    nav_msgs::OccupancyGrid map;
+  nav_msgs::OccupancyGrid map;
 
-    EllipsoidDecomp2D ellip_decomp_util_;
+  EllipsoidDecomp2D ellip_decomp_util_;
 };
 
-void populateSolverState(robust_fast_navigation::SolverState& state,
-                         const std::vector<Eigen::MatrixX4d>& hPolys,
-                         const trajectory_msgs::JointTrajectory& traj,
-                         const Eigen::Matrix3d& initialPVA, const Eigen::Matrix3d& finalPVA,
-                         int status);
+void populateSolverState(robust_fast_navigation::SolverState &state,
+                         const std::vector<Eigen::MatrixX4d> &hPolys,
+                         const trajectory_msgs::JointTrajectory &traj,
+                         const Eigen::Matrix3d &initialPVA,
+                         const Eigen::Matrix3d &finalPVA, int status);
 
 #endif

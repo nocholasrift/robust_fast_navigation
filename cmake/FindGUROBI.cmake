@@ -1,10 +1,15 @@
 find_path(GUROBI_INCLUDE_DIRS
-    NAMES gurobi_c.h
+    NAMES gurobi_c.h gurobi_c++.h
     HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
     PATH_SUFFIXES include)
 
-find_library(GUROBI_LIBRARY
-    NAMES gurobi gurobi110 gurobi100
+find_library(GUROBI_CXX_LIBRARY
+    NAMES gurobi_c++
+    HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
+    PATH_SUFFIXES lib)
+
+find_library(GUROBI_C_LIBRARY
+    NAMES gurobi110
     HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
     PATH_SUFFIXES lib)
 
@@ -35,5 +40,9 @@ if(CXX)
     endif()
 endif()
 
+message(WARNING "CPP LIB: ${GUROBI_CXX_LIBRARY}")
+message(WARNING "C LIB: ${GUROBI_C_LIBRARY}")
+set(GUROBI_LIBRARIES ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY})
+
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GUROBI DEFAULT_MSG GUROBI_LIBRARY)
+find_package_handle_standard_args(GUROBI DEFAULT_MSG GUROBI_LIBRARIES)

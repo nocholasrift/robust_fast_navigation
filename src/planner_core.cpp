@@ -3,7 +3,6 @@
 
 #include <memory>
 
-#include "costmap_2d/cost_values.h"
 #ifdef CERES_FOUND
 #include "robust_fast_navigation/contour_wrapper.h"
 #endif
@@ -27,7 +26,7 @@ Planner::Planner() {
 
 Planner::~Planner() {}
 
-void Planner::set_params(const planner_params_t &params) {
+void Planner::set_params(const planner_params &params) {
   _params = params;
 
   if (_params.SOLVER == "faster")
@@ -69,19 +68,22 @@ void Planner::set_start(const Eigen::MatrixXd &start) {
 
 void Planner::set_goal(const Eigen::MatrixXd &goal) {
   _goal = goal;
+  if (!_is_start_set) {
+    std::cerr << "[Planner Core] start must be set before goal!\n";
+    return;
+  }
   std::vector<double> clamped_goal = _map.clamp_point_to_bounds(
       {_start(0, 0), _start(1, 0)}, {goal(0, 0), goal(1, 0)});
   _goal(0, 0) = clamped_goal[0];
   _goal(1, 0) = clamped_goal[1];
-
-  std::cout << "clamping goal to: " << _goal.col(0) << std::endl;
-  std::cout << "from: " << goal.col(0) << std::endl;
 
   _is_goal_set = true;
 }
 
 void Planner::set_costmap(const map_util::occupancy_grid_t &map) {
   _map = map;
+  // std::vector<double> origin = _map.get_origin();
+  // std::cout << "origin: " << origin[0] << " " << origin[1] << "\n";
   _is_map_set = true;
 }
 
@@ -92,7 +94,7 @@ PlannerStatus Planner::plan(double horizon,
     std::cout << termcolor::red
               << "[Planner Core] missing start, goal or costmap"
               << termcolor::reset << std::endl;
-    return MISC_FAILURE;
+    return PlannerStatus::MISC_FAILURE;
   }
 
   _prev_plan_status = false;
@@ -113,36 +115,7 @@ PlannerStatus Planner::plan(double horizon,
   /*bool goal_occ =*/
   /*    _map.get_signed_dist(_start(0, 0), _start(1, 0)) < 2 *
    * _map.get_resolution();*/
-  ros::Time start_frontend = ros::Time::now();
-
-  if (start_occ || goal_occ) {
-    rfn_state_t point;
-    if (start_occ) {
-      point.pos = Eigen::Vector3d(_start(0, 0), _start(1, 0), 0);
-
-      std::vector<rfn_state_t> point_vec = {point};
-      std::cerr << "pushing trajectory" << std::endl;
-      _map.push_trajectory(point_vec, 0.);
-      std::cerr << termcolor::yellow
-                << "[Planner Core] Start in occupied space, pushing!!!"
-                << termcolor::reset << std::endl;
-      _start(0, 0) = point_vec[0].pos(0);
-      _start(1, 0) = point_vec[0].pos(1);
-    }
-
-    if (goal_occ) {
-      point.pos = Eigen::Vector3d(_goal(0, 0), _goal(1, 0), 0);
-
-      std::vector<rfn_state_t> point_vec = {point};
-      std::cerr << "pushing trajectory" << std::endl;
-      _map.push_trajectory(point_vec, 0.);
-      std::cerr << termcolor::yellow
-                << "[Planner Core]  Goal in occupied space, pushing!!!"
-                << termcolor::reset << std::endl;
-      _goal(0, 0) = point_vec[0].pos(0);
-      _goal(1, 0) = point_vec[0].pos(1);
-    }
-  }
+  // ros::Time start_frontend = ros::Time::now();
 
   jps::JPSPlan jps;
   unsigned int sX, sY, eX, eY;
@@ -163,7 +136,6 @@ PlannerStatus Planner::plan(double horizon,
 
   jps.set_start(sX, sY);
   jps.set_destination(eX, eY);
-  jps.set_occ_value(costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
 
   double x = _map.get_origin()[0];
   double y = _map.get_origin()[1];
@@ -175,10 +147,10 @@ PlannerStatus Planner::plan(double horizon,
   jps.set_util(_map, "inflated");
 
   std::cout << "checking jps" << std::endl;
-  ros::Time start_jps = ros::Time::now();
+  // ros::Time start_jps = ros::Time::now();
   int jps_status = jps.JPS();
-  std::cout << "[Planner Core] JPS took "
-            << (ros::Time::now() - start_jps).toSec() << "s" << std::endl;
+  // std::cout << "[Planner Core] JPS took "
+  //           << (ros::Time::now() - start_jps).toSec() << "s" << std::endl;
 
   // try one more time without inflated obstacles...
   /*if (jps_status == IN_OCCUPIED_SPACE)*/
@@ -203,11 +175,11 @@ PlannerStatus Planner::plan(double horizon,
                 << "[Planner Core] JPS failed, start in occupied space"
                 << termcolor::reset << std::endl;
 
-      return START_IN_OBSTACLE;
+      return PlannerStatus::START_IN_OBSTACLE;
     } else {
       std::cout << termcolor::red << "[Planner Core] JPS failed to find path"
                 << termcolor::reset << std::endl;
-      return JPS_FAIL_NO_PATH;
+      return PlannerStatus::JPS_FAIL_NO_PATH;
     }
   }
 
@@ -279,7 +251,7 @@ PlannerStatus Planner::plan(double horizon,
   if (jpsPath.size() == 0) {
     std::cout << termcolor::red << "[Planner Core] JPS modifications failed"
               << termcolor::reset << std::endl;
-    return JPS_FAIL_NO_PATH;
+    return PlannerStatus::JPS_FAIL_NO_PATH;
   }
 
   /*************************************
@@ -287,11 +259,11 @@ PlannerStatus Planner::plan(double horizon,
   **************************************/
 
   hPolys.clear();
-  ros::Time before_corridor = ros::Time::now();
+  // ros::Time before_corridor = ros::Time::now();
   if (!corridor::createCorridorJPS(jpsPath, _map, hPolys, _start, _goal)) {
     std::cout << termcolor::red << "[Planner Core] Corridor creation failed"
               << termcolor::reset << std::endl;
-    return CORRIDOR_FAIL;
+    return PlannerStatus::CORRIDOR_FAIL;
   }
 
   // if (!corridor::isInPoly(hPolys.back(), Eigen::Vector2d(_goal(0, 0),
@@ -323,22 +295,22 @@ PlannerStatus Planner::plan(double horizon,
   for (int p = 0; p < hPolys.size() - 1; p++) {
     if (!geo_utils::overlap(hPolys[p], hPolys[p + 1])) {
       // ROS_ERROR("CORRIDOR IS NOT FULLY CONNECTED");
-      return CORRIDOR_FAIL;
+      return PlannerStatus::CORRIDOR_FAIL;
     }
 
     if (!is_in_corridor)
       is_in_corridor = corridor::isInPoly(
           hPolys[p], Eigen::Vector2d(_start(0, 0), _start(1, 0)));
   }
-  std::cout << "[Planner Core] Corridor creation took "
-            << (ros::Time::now() - before_corridor).toSec() << " seconds"
-            << std::endl;
+  // std::cout << "[Planner Core] Corridor creation took "
+  //           << (ros::Time::now() - before_corridor).toSec() << " seconds"
+  //           << std::endl;
   // if(corridor::union_corridor(hPolys, _cgal_border, _corridor_boundary))
   //     std::cout << "we did it!!!" << std::endl;
 
-  std::cout << "[Planner Core] Front end took "
-            << (ros::Time::now() - start_frontend).toSec() << " seconds"
-            << std::endl;
+  // std::cout << "[Planner Core] Front end took "
+  //           << (ros::Time::now() - start_frontend).toSec() << " seconds"
+  //           << std::endl;
   /*************************************
   ******** GENERATE  TRAJECTORY ********
   **************************************/
@@ -346,7 +318,7 @@ PlannerStatus Planner::plan(double horizon,
   if (!_solver->setup(_start, _goal, hPolys)) {
     std::cout << termcolor::red << "[Planner Core] Solver setup failed"
               << termcolor::reset << std::endl;
-    return TRAJ_GEN_FAIL;
+    return PlannerStatus::TRAJ_GEN_FAIL;
   }
 
 #if CERES_FOUND
@@ -358,18 +330,14 @@ PlannerStatus Planner::plan(double horizon,
 #endif
 
   // time trajectory generation
-  ros::Time start_solve = ros::Time::now();
+  // ros::Time start_solve = ros::Time::now();
   if (!_solver->solve()) {
-    std::cout << termcolor::red
-              << "[Planner Core] Generating trajectory failed, time: "
-              << (ros::Time::now() - start_solve).toSec() << termcolor::reset
-              << std::endl;
-    return TRAJ_GEN_FAIL;
+    std::cout << termcolor::red << "[Planner Core] Generating trajectory failed"
+              << termcolor::reset << std::endl;
+    return PlannerStatus::TRAJ_GEN_FAIL;
   } else {
-    std::cout << termcolor::green
-              << "[Planner Core] Solver found trajectory, time: "
-              << (ros::Time::now() - start_solve).toSec() << termcolor::reset
-              << std::endl;
+    std::cout << termcolor::green << "[Planner Core] Solver found trajectory"
+              << termcolor::reset << std::endl;
     _prev_plan_status = true;
   }
 
@@ -379,12 +347,11 @@ PlannerStatus Planner::plan(double horizon,
   for (int i = 0; i < _traj.size(); ++i) {
     Eigen::Vector2d pos = _traj[i].pos.head(2);
     /*if (_map.is_occupied(pos[0], pos[1], "obstacles"))*/
-    if (_map.get_cost(pos(0), pos(1), "obstacles") ==
-        costmap_2d::LETHAL_OBSTACLE) {
+    if (_map.get_cost(pos(0), pos(1), "obstacles")) {
       std::cout << termcolor::red
                 << "[Planner Core] Trajectory overlaps obstacle"
                 << termcolor::reset << std::endl;
-      return TRAJ_GEN_FAIL;
+      return PlannerStatus::TRAJ_GEN_FAIL;
     }
   }
 
@@ -394,7 +361,7 @@ PlannerStatus Planner::plan(double horizon,
 
   _old_goal = _goal;
 
-  return SUCCESS;
+  return PlannerStatus::SUCCESS;
 }
 
 std::vector<rfn_state_t> Planner::get_trajectory() {
@@ -404,31 +371,33 @@ std::vector<rfn_state_t> Planner::get_trajectory() {
   std::vector<rfn_state_t> ret;
 
   int sz = _traj.size();
-  for (int i = 0; i < _traj.size(); ++i) {
-    Eigen::Vector2d pos = _traj[i].pos.head(2);
-    if (_map.is_occupied(pos[0], pos[1], "inflated") &&
-        _map.get_signed_dist(pos[0], pos[1]) < _params.TRIM_DIST) {
-      sz = i - 1;
-      std::cout << termcolor::red
-                << "[Planner Core] Trajectory overlaps obstacle, "
-                << _map.get_signed_dist(pos[0], pos[1]) << " trimming to size "
-                << sz << " / " << _traj.size() << termcolor::reset << std::endl;
-      if (_prev_plan_status)
-        _trim_count++;
-      else
-        _trim_count = 0;
+  // for (int i = 0; i < _traj.size(); ++i) {
+  //   Eigen::Vector2d pos = _traj[i].pos.head(2);
+  //   if (_map.is_occupied(pos[0], pos[1], "inflated") &&
+  //       _map.get_signed_dist(pos[0], pos[1]) < _params.TRIM_DIST) {
+  //     sz = i - 1;
+  //     std::cout << termcolor::red
+  //               << "[Planner Core] Trajectory overlaps obstacle, "
+  //               << _map.get_signed_dist(pos[0], pos[1]) << " trimming to size
+  //               "
+  //               << sz << " / " << _traj.size() << termcolor::reset <<
+  //               std::endl;
+  //     if (_prev_plan_status)
+  //       _trim_count++;
+  //     else
+  //       _trim_count = 0;
+  //
+  //     break;
+  //   }
+  // }
 
-      break;
-    }
-  }
-
-  if (_trim_count > 10) {
-    std::cout << termcolor::red
-              << "[Planner Core] Trajectory trimmed too many times, "
-              << "letting trajectory go" << termcolor::reset << std::endl;
-    _trim_count = 0;
-    return _traj;
-  }
+  // if (_trim_count > 10) {
+  //   std::cout << termcolor::red
+  //             << "[Planner Core] Trajectory trimmed too many times, "
+  //             << "letting trajectory go" << termcolor::reset << std::endl;
+  //   _trim_count = 0;
+  //   return _traj;
+  // }
 
   if (sz > 0)
     ret.insert(ret.end(), _traj.begin(), _traj.begin() + sz);
@@ -517,10 +486,7 @@ bool Planner::JPSIntersectObs(const std::vector<Eigen::Vector2d> &path) {
     ex = end_cells[0];
     ey = end_cells[1];
 
-    _map.raycast(
-        sx, sy, ex, ey, x, y,
-        {costmap_2d::LETHAL_OBSTACLE, costmap_2d::INSCRIBED_INFLATED_OBSTACLE},
-        "inflated");
+    _map.raycast(sx, sy, ex, ey, x, y, "inflated");
 
     // if x,y does not reach the end of the ray, we hit an unknown cell
     Eigen::Vector2d p(x, y);
@@ -569,8 +535,8 @@ Planner::getJPSInFree(const std::vector<Eigen::Vector2d> &path) {
     ex = end_cells[0];
     ey = end_cells[1];
 
-    _map.raycast(sx, sy, ex, ey, x, y, {costmap_2d::NO_INFORMATION},
-                 "inflated");
+    std::vector<unsigned char> no_infos = _map.get_no_info_values();
+    _map.raycast(sx, sy, ex, ey, x, y, "inflated", &no_infos);
 
     // if x,y does not reach the end of the ray, we hit an unknown cell
     Eigen::Vector2d p(x, y);

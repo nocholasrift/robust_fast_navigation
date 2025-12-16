@@ -6,7 +6,6 @@
  * See LICENSE file for the license information
  * -------------------------------------------------------------------------- */
 
-#include <ros/package.h>
 #include <unistd.h>
 
 #include <chrono>

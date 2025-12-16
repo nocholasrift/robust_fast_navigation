@@ -174,7 +174,7 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh) {
 
   _mpc_backup_client = nh.serviceClient<std_srvs::Empty>("/mpc_backup");
 
-  _prev_plan_status = SUCCESS;
+  _prev_plan_status = PlannerStatus::SUCCESS;
 
   _prev_jps_path.clear();
 
@@ -601,7 +601,8 @@ void PlannerROS::controlLoop(const ros::TimerEvent &) {
   if (!_is_grid_map_started) {
 
     _occ_grid = std::make_unique<map_util::occupancy_grid_t>(
-        width, height, resolution, origin_x, origin_y, data, occupied_values);
+        width, height, resolution, origin_x, origin_y, data, occupied_values,
+        {costmap_2d::NO_INFORMATION});
     _is_grid_map_started = true;
   } else {
     _occ_grid->update(width, height, resolution, origin_x, origin_y, data,
@@ -610,26 +611,6 @@ void PlannerROS::controlLoop(const ros::TimerEvent &) {
 
   ROS_INFO("Occupancy grid created in %.4f seconds",
            (ros::Time::now() - start).toSec());
-
-  if (sentTraj.points.size() > 1) {
-    // get heading of trajectory without using velocity field
-    double traj_theta = atan2(
-        sentTraj.points[1].positions[1] - sentTraj.points[0].positions[1],
-        sentTraj.points[1].positions[0] - sentTraj.points[0].positions[0]);
-
-    double e = atan2(sin(traj_theta - _odom(2)), cos(traj_theta - _odom(2)));
-
-    // use mpc reverse mode if no space to turn around
-    if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) >= _min_turn_clearance &&
-        _mpc_backwards) {
-      std_srvs::Empty srv;
-      if (_mpc_backup_client.call(srv)) {
-        _mpc_backwards = false;
-        ROS_WARN("MPC reverse mode turned off!");
-      } else
-        ROS_ERROR("Failed to call MPC backup mode");
-    }
-  }
 
   /*************************************
   **************** PLAN ****************
@@ -822,8 +803,9 @@ bool PlannerROS::plan(bool is_failsafe) {
   ros::Time before = ros::Time::now();
   _prev_plan_status = _planner.plan(_curr_horizon, jpsPath, hPolys);
   std::cout << "planner finished in " << (ros::Time::now() - before).toSec()
-            << " with status" << _prev_plan_status << std::endl;
-  if (_prev_plan_status) {
+            << " with status" << static_cast<int>(_prev_plan_status)
+            << std::endl;
+  if (_prev_plan_status != PlannerStatus::SUCCESS) {
     ROS_WARN("Planner failed to find path");
     // check if initial velocity, acceleration, or jerk are higher than max
     double vel = initialPVAJ.col(1).norm();
@@ -870,7 +852,7 @@ bool PlannerROS::plan(bool is_failsafe) {
   jpsPub.publish(jpsMsg);
   ROS_INFO("published jps path: %lu", jpsPath.size());
 
-  if (_prev_plan_status) {
+  if (_prev_plan_status != PlannerStatus::SUCCESS) {
     if (_use_arclen) {
       mpcHorizon.points.clear();
       std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
@@ -988,25 +970,6 @@ bool PlannerROS::plan(bool is_failsafe) {
     start = ros::Time::now();
   }
 
-  if (sentTraj.points.size() > 2) {
-    double traj_theta = atan2(sentTraj.points[2].positions[1] - _odom(1),
-                              sentTraj.points[2].positions[0] - _odom(0));
-
-    double e = atan2(sin(traj_theta - _odom(2)), cos(traj_theta - _odom(2)));
-
-    // use mpc reverse mode if no space to turn around
-    if (_occ_grid->get_signed_dist(_odom(0), _odom(1)) < _min_turn_clearance &&
-        fabs(e) > M_PI / 2.0 && !_mpc_backwards) {
-      ROS_WARN("MPC reverse mode engaged!");
-      std_srvs::Empty srv;
-      if (_mpc_backup_client.call(srv)) {
-        _mpc_backwards = true;
-        ROS_INFO("MPC backup mode called");
-      } else
-        ROS_ERROR("Failed to call MPC backup mode");
-    }
-  }
-
 #ifdef MRS_MSGS_FOUND
   if (_is_drone && !_use_mpc) {
     mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference =
@@ -1055,7 +1018,8 @@ void PlannerROS::safetyLoop(const ros::TimerEvent &) {
   unsigned char *data = costmap.getCharMap();
 
   _occ_grid = std::make_unique<map_util::occupancy_grid_t>(
-      width, height, resolution, origin_x, origin_y, data, occupied_values);
+      width, height, resolution, origin_x, origin_y, data, occupied_values,
+      {costmap_2d::NO_INFORMATION});
 
   _planner.set_costmap(*_occ_grid);
   std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();

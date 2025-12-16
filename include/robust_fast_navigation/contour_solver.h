@@ -1,6 +1,6 @@
 #pragma once
 
-#include <endian.h>
+// #include <endian.h>
 #include <gurobi_c++.h>
 #include <robust_fast_navigation/rfn_types.h>
 
@@ -8,133 +8,124 @@
 #include <array>
 #include <memory>
 
-namespace contour_solver
-{
+namespace contour_solver {
 
-class mycallback : public GRBCallback
-{
-   public:
-    bool should_terminate_;
-    mycallback() { should_terminate_ = false; }
+class mycallback : public GRBCallback {
+public:
+  bool should_terminate_;
+  mycallback() { should_terminate_ = false; }
 
-    mycallback(double timeout_time)
-    {
-        this->timeout_time = timeout_time;
-        should_terminate_  = false;
+  mycallback(double timeout_time) {
+    this->timeout_time = timeout_time;
+    should_terminate_ = false;
+  }
+  // void abortar();
+  void set_timeout(double timeout_time) {
+    this->timeout_time = timeout_time;
+    should_terminate_ = false;
+  }
+
+protected:
+  void callback() override { // This function is called periodically along the
+                             // optimization process.
+    //  It is called several times more after terminating the program
+    if (where == GRB_CB_MIPNODE) {
+      double elapsed_time = this->getDoubleInfo(GRB_CB_RUNTIME);
+      if (elapsed_time > timeout_time) {
+        printf("Timeout reached\n");
+        should_terminate_ = true;
+        GRBCallback::abort(); // This function only does effect when inside the
+                              // function callback() of this class
+      }
     }
-    // void abortar();
-    void set_timeout(double timeout_time)
-    {
-        this->timeout_time = timeout_time;
-        should_terminate_  = false;
-    }
+  }
 
-   protected:
-    void callback() override
-    {  // This function is called periodically along the optimization process.
-        //  It is called several times more after terminating the program
-        if (where == GRB_CB_MIPNODE)
-        {
-            double elapsed_time = this->getDoubleInfo(GRB_CB_RUNTIME);
-            if (elapsed_time > timeout_time)
-            {
-                printf("Timeout reached\n");
-                should_terminate_ = true;
-                GRBCallback::abort();  // This function only does effect when inside the
-                                       // function callback() of this class
-            }
-        }
-    }
-
-    double timeout_time;
+  double timeout_time;
 };
 
-class Segment
-{
-   public:
-    Segment();
-    ~Segment();
+class Segment {
+public:
+  Segment();
+  ~Segment();
 
-    GLEVec getPos(double t);
-    GLEVec getVel(double t);
-    GLEVec getAcc(double t);
-    GLEVec getJerk(double t);
+  GLEVec getPos(double t);
+  GLEVec getVel(double t);
+  GLEVec getAcc(double t);
+  GLEVec getJerk(double t);
 
-    GLEVec getP0();
-    GLEVec getP1();
-    GLEVec getP2();
-    GLEVec getP3();
+  GLEVec getP0();
+  GLEVec getP1();
+  GLEVec getP2();
+  GLEVec getP3();
 
-    std::array<GVec, 4> _x;
+  std::array<GVec, 4> _x;
 };
 
-class Contour
-{
-   public:
-    Contour() = default;
-    Contour(int n_segments);
-    Contour(const std::vector<Segment> &segments);
+class Contour {
+public:
+  Contour() = default;
+  Contour(int n_segments);
+  Contour(const std::vector<Segment> &segments);
 
-    Segment &operator[](int m) { return _segments[m]; }
+  Segment &operator[](int m) { return _segments[m]; }
 
-    Segment back() { return _segments.back(); }
-    int size() { return _segments.size(); }
+  Segment back() { return _segments.back(); }
+  int size() { return _segments.size(); }
 
-    GLEVec getPos(double t);
-    GLEVec getVel(double t);
-    GLEVec getAcc(double t);
-    GLEVec getJerk(double t);
+  GLEVec getPos(double t);
+  GLEVec getVel(double t);
+  GLEVec getAcc(double t);
+  GLEVec getJerk(double t);
 
-    int findSegment(double t);
+  int findSegment(double t);
 
-    Segment getSegment(int m);
+  Segment getSegment(int m);
 
-   private:
-    std::vector<Segment> _segments;
+private:
+  std::vector<Segment> _segments;
 };
 
-class ContourSolver
-{
-   public:
-    ContourSolver();
-    ~ContourSolver();
+class ContourSolver {
+public:
+  ContourSolver();
+  ~ContourSolver();
 
-    void setStart(const solver_state &state);
-    void setGoal(const solver_state &state);
-    void setPolytopes(const std::vector<Eigen::MatrixX4d> &polytopes);
+  void setStart(const solver_state &state);
+  void setGoal(const solver_state &state);
+  void setPolytopes(const std::vector<Eigen::MatrixX4d> &polytopes);
 
-    Contour getContour() { return _contour; }
+  Contour getContour() { return _contour; }
 
-    void setup();
-    bool optimize();
+  void setup();
+  bool optimize();
 
-   private:
-    void initVars();
+private:
+  void initVars();
 
-    void setStartCons();
-    void setGoalCons();
-    void setPolytopeCons();
-    void setContinuityCons();
+  void setStartCons();
+  void setGoalCons();
+  void setPolytopeCons();
+  void setContinuityCons();
 
-    void setObjective();
+  void setObjective();
 
-    // std::unique_ptr<GRBEnv> _env;
-    GRBEnv _env;
-    std::unique_ptr<GRBModel> _model;
+  // std::unique_ptr<GRBEnv> _env;
+  GRBEnv _env;
+  std::unique_ptr<GRBModel> _model;
 
-    std::vector<Eigen::MatrixX4d> _polytopes;
-    std::vector<GRBConstr> _polytope_constraints;
-    std::vector<GRBConstr> _start_constraints;
-    std::vector<GRBConstr> _goal_constraints;
-    std::vector<GRBConstr> _cont_constraints;
+  std::vector<Eigen::MatrixX4d> _polytopes;
+  std::vector<GRBConstr> _polytope_constraints;
+  std::vector<GRBConstr> _start_constraints;
+  std::vector<GRBConstr> _goal_constraints;
+  std::vector<GRBConstr> _cont_constraints;
 
-    solver_state _start;
-    solver_state _goal;
+  solver_state _start;
+  solver_state _goal;
 
-    Contour _contour;
+  Contour _contour;
 
-    int _n_segments;
+  int _n_segments;
 
-    mycallback _cb;
+  mycallback _cb;
 };
-}  // namespace contour_solver
+} // namespace contour_solver
