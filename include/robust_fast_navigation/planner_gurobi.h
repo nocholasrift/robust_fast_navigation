@@ -25,7 +25,6 @@
 
 #include <faster/solver.hpp>
 #include <grid_map_costmap_2d/Costmap2DConverter.hpp>
-#include <grid_map_ros/GridMapRosConverter.hpp>
 #include <string>
 
 class PlannerROS
@@ -50,9 +49,9 @@ class PlannerROS
     void mpcHorizoncb(const trajectory_msgs::JointTrajectory::ConstPtr &msg);
 
     // timers
-    void safetyLoop(const ros::TimerEvent &);
     void goalLoop(const ros::TimerEvent &);
     void controlLoop(const ros::TimerEvent &);
+    void mapPublisher(const ros::TimerEvent &);
     void publishOccupied(const ros::TimerEvent &);
 
     // utilities
@@ -123,6 +122,7 @@ class PlannerROS
     ros::Subscriber mpcGoalReachedSub;
 
     // Publishers
+    ros::Publisher gridMapPub;
     ros::Publisher trajVizPub;
     ros::Publisher wptVizPub;
     ros::Publisher trajPub;

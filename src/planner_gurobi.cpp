@@ -1,5 +1,6 @@
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
+#include <grid_map_msgs/GridMap.h>
 #include <math.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/planner_gurobi.h>
@@ -9,6 +10,9 @@
 #include <tf/tf.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+
+#include <grid_map_costmap_2d/grid_map_costmap_2d.hpp>
+#include <grid_map_ros/GridMapRosConverter.hpp>
 
 #ifdef MRS_MSGS_FOUND
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
@@ -44,8 +48,8 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     nh.param("robust_planner/teleop", _is_teleop, false);
     nh.param("robust_planner/is_drone", _is_drone, false);
     nh.param("robust_planner/lookahead", _lookahead, .15);
-    nh.param("robust_planner/max_deviation", _max_dev, 1.);
     nh.param("robust_planner/planner_frequency", _dt, .1);
+    nh.param("robust_planner/max_deviation", _max_dev, 1.);
     nh.param("robust_planner/plan_once", _plan_once, false);
     nh.param("robust_planner/use_arclen", _use_arclen, false);
     nh.param("robust_planner/plan_in_free", _plan_in_free, false);
@@ -99,15 +103,16 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     _planner.set_params(_planner_params);
 
     // Publishers
-    trajVizPub     = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
-    wptVizPub      = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
-    trajPub        = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
-    meshPub        = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
-    edgePub        = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
-    helperMeshPub  = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_helper", 1000);
-    helperEdgePub  = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_helper", 1000);
-    initPointPub   = nh.advertise<geometry_msgs::PointStamped>("/initPoint", 0);
-    goalPub        = nh.advertise<geometry_msgs::PoseStamped>("/global_planner/goal", 0);
+    gridMapPub = nh.advertise<grid_map_msgs::GridMap>("/grid_map", 0);
+    trajVizPub = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
+    wptVizPub  = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
+    trajPub    = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
+    meshPub    = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
+    edgePub    = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
+    helperMeshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_helper", 1000);
+    helperEdgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_helper", 1000);
+    initPointPub  = nh.advertise<geometry_msgs::PointStamped>("/initPoint", 0);
+    goalPub       = nh.advertise<geometry_msgs::PoseStamped>("/global_planner/goal", 0);
     paddedLaserPub = nh.advertise<visualization_msgs::Marker>("/paddedObs", 0);
     jpsPub         = nh.advertise<nav_msgs::Path>("/jpsPath", 0);
     jpsPubFree     = nh.advertise<nav_msgs::Path>("/jpsPathFree", 0);
@@ -142,10 +147,11 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     occSub          = nh.subscribe("/occ_points", 10, &PlannerROS::occlusionPointscb, this);
     MPCHorizonSub   = nh.subscribe("/mpc_horizon", 1, &PlannerROS::mpcHorizoncb, this);
     clickedPointSub = nh.subscribe("/clicked_point", 1, &PlannerROS::clickedPointcb, this);
-    pathSub = nh.subscribe("/global_planner/planner/plan", 1, &PlannerROS::globalPathcb, this);
+    pathSub =
+        nh.subscribe("/global_planner/planner/plan", 1, &PlannerROS::globalPathcb, this);
 
     // Timers
-    /*safetyTimer  = nh.createTimer(ros::Duration(.1), &PlannerROS::safetyLoop, this);*/
+    safetyTimer  = nh.createTimer(ros::Duration(0.5), &PlannerROS::mapPublisher, this);
     goalTimer    = nh.createTimer(ros::Duration(_dt / 2.0), &PlannerROS::goalLoop, this);
     controlTimer = nh.createTimer(ros::Duration(_dt), &PlannerROS::controlLoop, this);
     publishTimer = nh.createTimer(ros::Duration(_dt * 2), &PlannerROS::publishOccupied, this);
@@ -724,7 +730,8 @@ bool PlannerROS::plan(bool is_failsafe)
         initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], p.positions[1], p.positions[2]);
 
         // velocity
-        initialPVAJ.col(1) = Eigen::Vector3d(p.velocities[0], p.velocities[1], p.velocities[2]);
+        initialPVAJ.col(1) =
+            Eigen::Vector3d(p.velocities[0], p.velocities[1], p.velocities[2]);
 
         // acceleration
         initialPVAJ.col(2) =
@@ -763,7 +770,8 @@ bool PlannerROS::plan(bool is_failsafe)
         initialPVAJ.col(0) = Eigen::Vector3d(p.positions[0], p.positions[1], p.positions[2]);
 
         // velocity
-        initialPVAJ.col(1) = Eigen::Vector3d(p.velocities[0], p.velocities[1], p.velocities[2]);
+        initialPVAJ.col(1) =
+            Eigen::Vector3d(p.velocities[0], p.velocities[1], p.velocities[2]);
 
         // acceleration
         initialPVAJ.col(2) =
@@ -821,8 +829,8 @@ bool PlannerROS::plan(bool is_failsafe)
     std::vector<Eigen::MatrixX4d> hPolys;
     ros::Time before  = ros::Time::now();
     _prev_plan_status = _planner.plan(_curr_horizon, jpsPath, hPolys);
-    std::cout << "planner finished in " << (ros::Time::now() - before).toSec() << " with status"
-              << _prev_plan_status << std::endl;
+    std::cout << "planner finished in " << (ros::Time::now() - before).toSec()
+              << " with status " << _prev_plan_status << std::endl;
     if (_prev_plan_status)
     {
         ROS_WARN("Planner failed to find path");
@@ -839,9 +847,10 @@ bool PlannerROS::plan(bool is_failsafe)
     // visualizeBoundary(_planner.get_corridor_boundary(), unionCorridorPub,
     // _frame_str);
 
-    // ROS_INFO("visualized polytope %lu", hPolys.size());
+    ROS_INFO("visualized polytope %lu", hPolys.size());
 
     // publish initial pvaj
+    ROS_INFO("publishing init pvaj: %.2f", p_start_t);
     trajectory_msgs::JointTrajectoryPoint p;
     p.positions       = {initialPVAJ(0, 0), initialPVAJ(1, 0), initialPVAJ(2, 0)};
     p.velocities      = {initialPVAJ(0, 1), initialPVAJ(1, 1), initialPVAJ(2, 1)};
@@ -849,6 +858,7 @@ bool PlannerROS::plan(bool is_failsafe)
     p.effort          = {initialPVAJ(0, 3), initialPVAJ(1, 3), initialPVAJ(2, 3)};
     p.time_from_start = ros::Duration(p_start_t);
     initialPVAJPub.publish(p);
+    ROS_INFO("finished publish initpvaj");
 
     /*************************************
     ******** PUBLISH JPS TO RVIZ *********
@@ -951,7 +961,8 @@ bool PlannerROS::plan(bool is_failsafe)
             for (int i = startInd; i < trajInd; i++)
             {
                 aTraj.points.push_back(sentTraj.points[i]);
-                aTraj.points.back().time_from_start = ros::Duration((i - startInd) * _traj_dt);
+                aTraj.points.back().time_from_start =
+                    ros::Duration((i - startInd) * _traj_dt);
             }
 
             double startTime = (trajInd - startInd) * _traj_dt;
@@ -1056,31 +1067,21 @@ bool PlannerROS::plan(bool is_failsafe)
     return true;
 }
 
-void PlannerROS::safetyLoop(const ros::TimerEvent &)
+void PlannerROS::mapPublisher(const ros::TimerEvent &)
 {
-    if (sentTraj.points.size() == 0) return;
+    if (!_is_costmap_started) return;
 
     _costmap->updateMap();
-    _occ_grid = std::make_unique<map_util::occupancy_grid_t>(*_costmap->getCostmap());
+    grid_map::Costmap2DConverter<grid_map::GridMap> costmap_converter;
+    const costmap_2d::Costmap2D &cmap = *_costmap->getCostmap();
 
-    _planner.set_costmap(*_occ_grid);
-    std::vector<rfn_state_t> arclen_traj = _planner.get_arclen_traj();
+    grid_map::GridMap grid;
+    costmap_converter.initializeFromCostmap2D(cmap, grid);
+    costmap_converter.addLayerFromCostmap2D(cmap, "layer", grid);
 
-    sentTraj.points.clear();
-    for (rfn_state_t &x : arclen_traj)
-    {
-        // time from start is actually arc len in this case...
-        trajectory_msgs::JointTrajectoryPoint p;
-        p.positions.push_back(x.pos(0));
-        p.positions.push_back(x.pos(1));
-        p.time_from_start = ros::Duration(x.t);
-
-        sentTraj.points.push_back(p);
-    }
-
-    /*visualizeTraj();*/
-
-    if (!_is_teleop) trajPub.publish(sentTraj);
+    grid_map_msgs::GridMap map_msg;
+    grid_map::GridMapRosConverter::toMessage(grid, map_msg);
+    gridMapPub.publish(map_msg);
 }
 
 /**********************************************************************
