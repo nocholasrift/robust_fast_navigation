@@ -177,17 +177,14 @@ public:
       return t_min <= t_max;
     };
 
-    std::cout << "updating\n";
     if (!update_t(current[0], dx, x_min, x_max))
       return current;
     if (!update_t(current[1], dy, y_min, y_max))
       return current;
-    std::cout << "done\n";
 
     int count = 0;
     t_max *= epsilon;
 
-    std::cout << "occupancy testing\n";
     while (is_occupied(current[0] + (t_max * epsilon) * dx,
                        current[1] + (t_max * epsilon) * dy, "inflated") &&
            count++ < 10)

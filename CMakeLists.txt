@@ -47,6 +47,7 @@ list(APPEND PLANNER_LIBS
 add_library(planner_lib
   ${PLANNER_SRCS}
 )
+set_target_properties(planner_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(planner_lib
   ${PLANNER_LIBS}

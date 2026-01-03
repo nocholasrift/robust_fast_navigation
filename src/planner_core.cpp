@@ -146,7 +146,6 @@ PlannerStatus Planner::plan(double horizon,
   /*jps.set_map(_map.get_data("inflated"), w, h, x, y, resolution);*/
   jps.set_util(_map, "inflated");
 
-  std::cout << "checking jps" << std::endl;
   // ros::Time start_jps = ros::Time::now();
   int jps_status = jps.JPS();
   // std::cout << "[Planner Core] JPS took "

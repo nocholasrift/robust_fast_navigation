@@ -70,6 +70,8 @@ PYBIND11_MODULE(py_planner, m) {
                     std::vector<unsigned char> &,
                     const std::vector<unsigned char> &,
                     const std::vector<unsigned char> &>())
+      .def("is_occupied", py::overload_cast<double, double, const std::string&>(
+                              &map_util::OccupancyGrid::is_occupied, py::const_))
       .def("get_origin", &map_util::OccupancyGrid::get_origin)
       .def("world_to_map", &map_util::OccupancyGrid::world_to_map)
       .def("cells_to_index", &map_util::OccupancyGrid::cells_to_index)
