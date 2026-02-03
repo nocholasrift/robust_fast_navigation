@@ -103,7 +103,8 @@ PlannerROS::PlannerROS(ros::NodeHandle &nh)
     _planner.set_params(_planner_params);
 
     // Publishers
-    gridMapPub = nh.advertise<grid_map_msgs::GridMap>("/grid_map", 0);
+    /*gridMapPub = nh.advertise<grid_map_msgs::GridMap>("/grid_map", 0);*/
+    gridMapPub = nh.advertise<nav_msgs::OccupancyGrid>("/grid_map", 0);
     trajVizPub = nh.advertise<visualization_msgs::Marker>("/MINCO_path", 0);
     wptVizPub  = nh.advertise<visualization_msgs::Marker>("/MINCO_wpts", 0);
     trajPub    = nh.advertise<trajectory_msgs::JointTrajectory>("/reference_trajectory", 0);
@@ -1075,13 +1076,55 @@ void PlannerROS::mapPublisher(const ros::TimerEvent &)
     grid_map::Costmap2DConverter<grid_map::GridMap> costmap_converter;
     const costmap_2d::Costmap2D &cmap = *_costmap->getCostmap();
 
-    grid_map::GridMap grid;
-    costmap_converter.initializeFromCostmap2D(cmap, grid);
-    costmap_converter.addLayerFromCostmap2D(cmap, "layer", grid);
+    nav_msgs::OccupancyGrid grid;
+    grid.header.stamp    = ros::Time::now();
+    grid.header.frame_id = _costmap->getGlobalFrameID();
 
-    grid_map_msgs::GridMap map_msg;
-    grid_map::GridMapRosConverter::toMessage(grid, map_msg);
-    gridMapPub.publish(map_msg);
+    // Set Info
+    grid.info.resolution = cmap.getResolution();
+    grid.info.width      = cmap.getSizeInCellsX();
+    grid.info.height     = cmap.getSizeInCellsY();
+
+    double origin_x, origin_y;
+    cmap.mapToWorld(0, 0, origin_x, origin_y);
+    grid.info.origin.position.x    = origin_x;
+    grid.info.origin.position.y    = origin_y;
+    grid.info.origin.orientation.w = 1.0;
+
+    // Rescale values to 0-100 (OccupancyGrid standard)
+    grid.data.resize(grid.info.width * grid.info.height);
+
+    unsigned char *data = cmap.getCharMap();
+    for (unsigned int i = 0; i < grid.data.size(); ++i)
+    {
+        unsigned char cost = data[i];
+
+        if (cost == costmap_2d::NO_INFORMATION)
+        {
+            grid.data[i] = -1;  // Unknown
+        }
+        else if (cost == costmap_2d::FREE_SPACE)
+        {
+            grid.data[i] = 0;  // Free
+        }
+        else if (cost >= costmap_2d::INSCRIBED_INFLATED_OBSTACLE)
+        {
+            grid.data[i] = 100;  // Lethal/Inscribed
+        }
+        else
+        {
+            grid.data[i] = 0;
+        }
+    }
+    gridMapPub.publish(grid);
+
+    /*grid_map::GridMap grid;*/
+    /*costmap_converter.initializeFromCostmap2D(cmap, grid);*/
+    /*costmap_converter.addLayerFromCostmap2D(cmap, "layer", grid);*/
+    /**/
+    /*grid_map_msgs::GridMap map_msg;*/
+    /*grid_map::GridMapRosConverter::toMessage(grid, map_msg);*/
+    /*gridMapPub.publish(map_msg);*/
 }
 
 /**********************************************************************
