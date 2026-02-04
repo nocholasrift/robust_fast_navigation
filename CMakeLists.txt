@@ -15,9 +15,11 @@ endif()
 
 add_compile_options(-std=c++17 -O3)
 
+add_subdirectory(third_party/pybind11)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-find_package(pybind11 QUIET)
+# find_package(pybind11 QUIET)
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
@@ -53,12 +55,13 @@ target_link_libraries(planner_lib
   ${PLANNER_LIBS}
 )
 
-if (pybind11_FOUND)
+# if (pybind11_FOUND)
   add_definitions(-DFOUND_PYBIND11)
 
   # find_package(PythonLibs REQUIRED)
   # include_directories(${PYTHON_INCLUDE_DIRS})
-  find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+  # find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+  find_package(Python3 COMPONENTS Development REQUIRED)
   include_directories(${Python3_INCLUDE_DIRS})
 
   pybind11_add_module(py_planner
@@ -71,7 +74,7 @@ if (pybind11_FOUND)
     ${PLANNER_LIBS}
   )
 
-endif()
+# endif()
 
 if (ROS_VERSION EQUAL 1)
 ## Find catkin macros and libraries
