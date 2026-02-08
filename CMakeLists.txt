@@ -55,7 +55,6 @@ target_link_libraries(planner_lib
   ${PLANNER_LIBS}
 )
 
-message("GUROBI INCLUDE DIR: ${GUROBI_INCLUDE_DIRS}")
 target_include_directories(planner_lib PRIVATE 
   include
   ${GUROBI_INCLUDE_DIRS}
@@ -82,6 +81,7 @@ target_include_directories(planner_lib PRIVATE
   )
 target_include_directories(py_planner PRIVATE
   include
+  ${GINAC_INCLUDE_DIRS} 
   ${GUROBI_INCLUDE_DIRS}
   ${Python3_INCLUDE_DIRS}
 )
