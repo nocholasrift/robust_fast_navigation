@@ -39,6 +39,6 @@ threads: 0
 verbose: 0
 
 # For debug
-plan_once: true
+plan_once: false
 
 is_drone: false

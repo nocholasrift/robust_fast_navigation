@@ -1,6 +1,5 @@
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/PoseArray.h>
-#include <grid_map_msgs/GridMap.h>
 #include <math.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/planner_gurobi.h>
@@ -10,9 +9,6 @@
 #include <tf/tf.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
-
-#include <grid_map_costmap_2d/grid_map_costmap_2d.hpp>
-#include <grid_map_ros/GridMapRosConverter.hpp>
 
 #ifdef MRS_MSGS_FOUND
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
@@ -1032,7 +1028,6 @@ void PlannerROS::mapPublisher(const ros::TimerEvent &)
     if (!_is_costmap_started) return;
 
     _costmap->updateMap();
-    grid_map::Costmap2DConverter<grid_map::GridMap> costmap_converter;
     const costmap_2d::Costmap2D &cmap = *_costmap->getCostmap();
 
     nav_msgs::OccupancyGrid grid;
