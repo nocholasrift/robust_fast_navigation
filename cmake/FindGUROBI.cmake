@@ -9,7 +9,7 @@ find_library(GUROBI_CXX_LIBRARY
     PATH_SUFFIXES lib)
 
 find_library(GUROBI_C_LIBRARY
-    NAMES gurobi110
+    NAMES gurobi110 gurobi100
     HINTS ${GUROBI_DIR} $ENV{GUROBI_HOME}
     PATH_SUFFIXES lib)
 

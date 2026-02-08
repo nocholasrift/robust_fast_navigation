@@ -20,17 +20,17 @@ add_subdirectory(third_party/pybind11)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # find_package(pybind11 QUIET)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(GUROBI REQUIRED)
 find_package(GiNaC REQUIRED)
 find_package(Eigen3 REQUIRED COMPONENTS system)
-find_package(GUROBI REQUIRED)
 
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-  ${GUROBI_INCLUDE_DIRS}
-  ${GINAC_INCLUDE_DIRS}
-)
+# include_directories(
+#   include
+#   ${catkin_INCLUDE_DIRS}
+#   ${GUROBI_INCLUDE_DIRS}
+#   ${GINAC_INCLUDE_DIRS}
+# )
 
 list(APPEND PLANNER_SRCS
   src/JPS.cpp
@@ -55,14 +55,21 @@ target_link_libraries(planner_lib
   ${PLANNER_LIBS}
 )
 
+message("GUROBI INCLUDE DIR: ${GUROBI_INCLUDE_DIRS}")
+target_include_directories(planner_lib PRIVATE 
+  include
+  ${GUROBI_INCLUDE_DIRS}
+  ${GINAC_INCLUDE_DIRS} 
+)
+
 # if (pybind11_FOUND)
   add_definitions(-DFOUND_PYBIND11)
 
   # find_package(PythonLibs REQUIRED)
   # include_directories(${PYTHON_INCLUDE_DIRS})
   # find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-  find_package(Python3 COMPONENTS Development REQUIRED)
-  include_directories(${Python3_INCLUDE_DIRS})
+  # find_package(Python3 COMPONENTS Development REQUIRED)
+  # include_directories(${Python3_INCLUDE_DIRS})
 
   pybind11_add_module(py_planner
     src/py_planner.cpp
@@ -73,6 +80,11 @@ target_link_libraries(planner_lib
     planner_lib
     ${PLANNER_LIBS}
   )
+target_include_directories(py_planner PRIVATE
+  include
+  ${GUROBI_INCLUDE_DIRS}
+  ${Python3_INCLUDE_DIRS}
+)
 
 # endif()
 
@@ -90,10 +102,10 @@ if (ROS_VERSION EQUAL 1)
     geometry_msgs
     visualization_msgs
 
-    grid_map_ros
-    grid_map_sdf
-    grid_map_core
-    grid_map_costmap_2d
+    # grid_map_ros
+    # grid_map_sdf
+    # grid_map_core
+    # grid_map_costmap_2d
   )
 
   list(APPEND ROS_PLANNER_SRCS
@@ -150,6 +162,11 @@ if (ROS_VERSION EQUAL 1)
   )
   target_link_libraries(planner
     ${ROS_PLANNER_LIBS}
+  )
+  target_include_directories(planner PRIVATE
+    include
+    ${GUROBI_INCLUDE_DIRS}
+    ${catkin_INCLUDE_DIRS}
   )
 
   # add_executable(plan_through_map

@@ -11,6 +11,7 @@
 
     <!--<node name="robust_planner" pkg="cbf_tracking" type="planner" 
            launch-prefix="lldb" output="screen">  -->
+    <!--<node name="robust_planner" pkg="robust_fast_navigation" type="planner" >-->
     <node name="robust_planner" pkg="robust_fast_navigation" type="planner" output="screen">
 
         <param name="is_barn" value="$(arg barn)" />
