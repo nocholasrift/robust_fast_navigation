@@ -257,6 +257,7 @@ PlannerStatus Planner::plan(double horizon,
   ********* GENERATE POLYTOPES *********
   **************************************/
 
+  std::cout << "generating polytopes\n";
   hPolys.clear();
   // ros::Time before_corridor = ros::Time::now();
   if (!corridor::createCorridorJPS(jpsPath, _map, hPolys, _start, _goal)) {
@@ -264,6 +265,7 @@ PlannerStatus Planner::plan(double horizon,
               << termcolor::reset << std::endl;
     return PlannerStatus::CORRIDOR_FAIL;
   }
+  std::cout << "done\n";
 
   // if (!corridor::isInPoly(hPolys.back(), Eigen::Vector2d(_goal(0, 0),
   // _goal(1, 0))) &&
@@ -637,7 +639,7 @@ double Planner::compute_arclen(double t0, double tf) {
   double prev_dx = _solver->get_vel(t0, 0);
   double prev_dy = _solver->get_vel(t0, 1);
 
-  for (double t = t0; t < tf; t += dt) {
+  for (double t = t0 + dt; t < tf; t += dt) {
     double dx, dy;
     dx = _solver->get_vel(t, 0);
     dy = _solver->get_vel(t, 1);
