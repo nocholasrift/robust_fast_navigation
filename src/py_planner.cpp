@@ -62,7 +62,12 @@ PYBIND11_MODULE(py_planner, m) {
       .def("set_goal", &Planner::set_goal)
       .def("set_costmap", &Planner::set_costmap)
       .def("plan", &Planner::plan)
-      .def("get_arclen_traj", py::overload_cast<>(&Planner::get_arclen_traj));
+      .def("get_arclen_traj", &Planner::get_arclen_traj);
+  // .def("refine_traj", &Planner::refine_traj);
+
+  py::enum_<map_util::Layer>(m, "MapLayer")
+      .value("kInflated", map_util::Layer::kInflated)
+      .value("kObstacles", map_util::Layer::kObstacles);
 
   py::class_<map_util::OccupancyGrid>(m, "OccupancyGrid", py::module_local())
       .def(py::init<>())
@@ -70,12 +75,14 @@ PYBIND11_MODULE(py_planner, m) {
                     std::vector<unsigned char> &,
                     const std::vector<unsigned char> &,
                     const std::vector<unsigned char> &>())
-      .def("is_occupied", py::overload_cast<double, double, const std::string&>(
-                              &map_util::OccupancyGrid::is_occupied, py::const_))
+      .def("is_occupied",
+           py::overload_cast<double, double, map_util::Layer>(
+               &map_util::OccupancyGrid::is_occupied, py::const_))
+      .def("sdf_dist", &map_util::OccupancyGrid::sdf_dist)
       .def("get_origin", &map_util::OccupancyGrid::get_origin)
       .def("world_to_map", &map_util::OccupancyGrid::world_to_map)
       .def("cells_to_index", &map_util::OccupancyGrid::cells_to_index)
-      .def("get_cost", py::overload_cast<unsigned int, const std::string &>(
+      .def("get_cost", py::overload_cast<unsigned int, map_util::Layer>(
                            &map_util::OccupancyGrid::get_cost))
       .def("update", py::overload_cast<int, int, double, double, double,
                                        const std::vector<unsigned char> &,

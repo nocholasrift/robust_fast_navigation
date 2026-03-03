@@ -79,7 +79,6 @@ inline bool convexCover(const std::vector<Eigen::VectorXd> &path,
         valid_pc[0].data(), 3, valid_pc.size());
 
     if (!firi::firi(bd, pc, a, b, hp)) {
-      std::cout << "firi failure :(" << std::endl;
       return false;
     }
 
@@ -88,7 +87,6 @@ inline bool convexCover(const std::vector<Eigen::VectorXd> &path,
       if (3 <= ((hp * ah).array() > -eps).cast<int>().sum() +
                    ((hpolys.back() * ah).array() > -eps).cast<int>().sum()) {
         if (!firi::firi(bd, pc, a, a, gap, 1)) {
-          std::cout << "firi failure :(" << std::endl;
           return false;
         }
 
@@ -120,7 +118,7 @@ getOccupied(const map_util::occupancy_grid_t &occ_grid) {
       /*unsigned int index = occ_grid.cells_to_index(i, j);*/
       /*if (occ_grid.data[index] == costmap_2d::LETHAL_OBSTACLE)*/
       /*    std::cout << "FOUND INFLATED OBSTACLE" << std::endl;*/
-      if (occ_grid.is_occupied(i, j, "inflated")) {
+      if (occ_grid.is_occupied(i, j, map_util::Layer::kInflated)) {
         unsigned int mx, my;
         double x, y;
         // _map.indexToCells(i, mx, my);
@@ -322,12 +320,11 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
   // obs3d = _map.get_occupied(3);
 
   auto end = std::chrono::high_resolution_clock::now();
-  std::cout << "getOccupied took "
-            << std::chrono::duration_cast<std::chrono::milliseconds>(end -
-                                                                     start)
-                   .count()
-            << "ms" << std::endl;
-  std::cout << "found occupied: " << obs3d.size() << "\n";
+  // std::cout << "getOccupied took "
+  //           << std::chrono::duration_cast<std::chrono::milliseconds>(end -
+  //                                                                    start)
+  //                  .count()
+  //           << "ms" << std::endl;
 
   if (prev_obs.size() > 0 && obs3d.size() == 0) {
     std::cout << "Obstacles in map dissapeared, using previous obstacles\n";
@@ -351,8 +348,6 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
   shortCut(polys);
   /*shrinkPolytopes(polys, initialPVAJ, finalPVAJ, .2);*/
 
-  std::cout << "POLYS IN CORRIDOR GENERATOR HAS SIZE: " << polys.size()
-            << std::endl;
   /*std::cout << "norm is: " << (polys[0] - polys[1]).norm() << std::endl;*/
 
   if (!isInPoly(polys[0],
@@ -384,7 +379,7 @@ inline bool createCorridorJPS(const std::vector<Eigen::Vector2d> &path,
 
   // check if obstacles are inside the corridor
   for (Eigen::Vector3d ob : obs3d) {
-    if (!_map.get_cost(ob(0), ob(1), "obstacles"))
+    if (!_map.get_cost(ob(0), ob(1), map_util::Layer::kObstacles))
       continue;
 
     for (Eigen::MatrixX4d poly : polys) {

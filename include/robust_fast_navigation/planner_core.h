@@ -3,6 +3,7 @@
 #include <robust_fast_navigation/contour_solver.h>
 #include <robust_fast_navigation/corridor.h>
 #include <robust_fast_navigation/faster_wrapper.h>
+#include <robust_fast_navigation/importance_sampler.h>
 #include <robust_fast_navigation/map_util.h>
 #include <robust_fast_navigation/spline.h>
 
@@ -29,7 +30,6 @@ public:
   void set_params(const planner_params &params);
 
   // setters
-
   void set_start(const Eigen::MatrixXd &start);
   void set_goal(const Eigen::MatrixXd &goal);
   void set_costmap(const map_util::occupancy_grid_t &map);
@@ -43,10 +43,10 @@ public:
   // getters
   std::vector<Eigen::Vector3d> get_cps();
   std::vector<rfn_state_t> get_trajectory();
-  std::vector<rfn_state_t> get_arclen_traj();
+  std::vector<rfn_state_t> get_arclen_traj(bool refine = false);
 
-  std::vector<rfn_state_t>
-  get_arclen_traj(const std::vector<rfn_state_t> &traj);
+  // std::vector<rfn_state_t>
+  // get_arclen_traj(const std::vector<rfn_state_t> &traj);
 
   // std::vector<spline_t> get_tube();
 
@@ -58,6 +58,8 @@ public:
   std::vector<Eigen::Vector2d>
   getJPSInFree(const std::vector<Eigen::Vector2d> &path);
   bool JPSIntersectObs(const std::vector<Eigen::Vector2d> &path);
+
+  RFNTrajectory refine_traj();
 
 private:
   Eigen::MatrixXd _old_goal;
@@ -89,4 +91,12 @@ private:
   bool reparam_traj(const std::vector<rfn_state_t> &traj,
                     std::vector<double> &ss, std::vector<double> &xs,
                     std::vector<double> &ys);
+
+  float sampling_cost(const Eigen::MatrixXf &cps,
+                      const Eigen::MatrixXf &orig_cps, bool verbose = false);
+
+  Eigen::Vector2f evaluate_bezier_segment(const Eigen::Vector2f &p0,
+                                          const Eigen::Vector2f &p1,
+                                          const Eigen::Vector2f &p2,
+                                          const Eigen::Vector2f &p3, float t);
 };

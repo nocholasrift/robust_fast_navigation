@@ -7,13 +7,21 @@
 // #include <grid_map_ros/GridMapRosConverter.hpp>
 // #include <grid_map_ros/grid_map_ros.hpp>
 // #include <grid_map_sdf/SignedDistance2d.hpp>
+#include <optional>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
 namespace map_util {
+
+enum class Layer { kInflated, kObstacles };
+
 // struct mimicing nav_msgs::OccupancyGrid
 class OccupancyGrid {
 private:
+  enum class FH_direction { kRow, kCol };
+  static constexpr double kINF = 1e9;
+
   std::vector<unsigned char> data;
   int width;
   int height;
@@ -32,7 +40,7 @@ private:
   std::unordered_set<uint64_t> known_occupied_inds;
 
 public:
-  Eigen::MatrixXd _sdf;
+  std::optional<Eigen::MatrixXd> _sdf;
 
   OccupancyGrid() {
     width = 0;
@@ -139,18 +147,6 @@ public:
     update_occupied_obstacles();
   }
 
-  // std::vector<double> clamp_point_to_bounds(const std::vector<double>& goal)
-  // {
-  //     std::vector<double> clamped = goal;
-  //
-  //     double wx_max = origin_x + width * resolution;
-  //     double wy_max = origin_y + height * resolution;
-  //
-  //     clamped[0] = std::min(std::max(clamped[0], origin_x), wx_max);
-  //     clamped[1] = std::min(std::max(clamped[1], origin_y), wy_max);
-  //
-  //     return clamped;
-  // }
   std::vector<double> clamp_point_to_bounds(const std::vector<double> &current,
                                             const std::vector<double> &goal) {
     double epsilon = .95;
@@ -186,11 +182,107 @@ public:
     t_max *= epsilon;
 
     while (is_occupied(current[0] + (t_max * epsilon) * dx,
-                       current[1] + (t_max * epsilon) * dy, "inflated") &&
+                       current[1] + (t_max * epsilon) * dy, Layer::kInflated) &&
            count++ < 10)
       t_max *= epsilon;
 
     return {current[0] + (t_max)*dx, current[1] + (t_max)*dy};
+  }
+
+  double sdf_dist(double x, double y, Layer layer) {
+    if (!_sdf) {
+      _sdf = Eigen::MatrixXd(height, width);
+      compute_sdf(_sdf.value(), layer);
+    }
+
+    std::vector<unsigned int> m_coords = world_to_map(x, y);
+    return _sdf.value()(m_coords[1], m_coords[0]);
+  }
+
+  void compute_sdf(Eigen::MatrixXd &sdf, Layer layer) {
+
+    for (int row = 0; row < height; ++row) {
+      auto is_occ_member = [&, this](unsigned int variable_ind) {
+        bool is_occ;
+        is_occ = is_occupied(variable_ind, row, layer);
+
+        return is_occ ? 0 : kINF;
+      };
+
+      sdf.row(row) = FH_transform(FH_direction::kRow, is_occ_member);
+    }
+
+    // now do the same thing but in column direction with the resulting values..
+    for (int col = 0; col < width; ++col) {
+      auto row_dist_value = [&, this](unsigned int variable_ind) {
+        return sdf(variable_ind, col);
+      };
+
+      sdf.col(col) = FH_transform(FH_direction::kCol, row_dist_value);
+    }
+
+    sdf.array() = sdf.array().sqrt() * resolution;
+  }
+
+  // Felzenszwalb and Huttelocher algorithm for distance transforms
+  // https://cs.brown.edu/people/pfelzens/papers/dt-final.pdf
+  template <typename Func>
+  Eigen::VectorXd FH_transform(FH_direction dir, Func f) {
+    int dim = (dir == FH_direction::kRow) ? width : height;
+
+    size_t k = 0;
+    std::vector<int> lower_env_locs(dim);
+    lower_env_locs[0] = 0;
+
+    std::vector<double> boundary_locs(dim + 1);
+    boundary_locs[0] = -kINF;
+    boundary_locs[1] = kINF;
+
+    Eigen::VectorXd one_dim_dists(dim);
+
+    for (int ind = 1; ind < dim; ++ind) {
+      // this wasn't in the paper but without it, sdf results
+      // are not correct. f(ind) ended up polluting the
+      // intersection
+      if (f(ind) >= kINF) {
+        continue;
+      }
+
+      double intersect;
+      do {
+        double numer =
+            (f(ind) + ind * ind -
+             (f(lower_env_locs[k]) + lower_env_locs[k] * lower_env_locs[k]));
+        intersect = numer / (2 * ind - 2 * lower_env_locs[k]);
+
+        if (intersect <= boundary_locs[k]) {
+          // this should never happen, but just in case...
+          if (k == 0) {
+            break;
+          }
+          --k;
+        }
+
+      } while (intersect <= boundary_locs[k]);
+
+      lower_env_locs[++k] = ind;
+      boundary_locs[k] = intersect;
+      boundary_locs[k + 1] = kINF;
+    }
+
+    // fill in values of distance transform
+    k = 0;
+    for (int ind = 0; ind < dim; ++ind) {
+      while (boundary_locs[k + 1] < ind) {
+        ++k;
+      }
+
+      one_dim_dists[ind] =
+          (ind - lower_env_locs[k]) * (ind - lower_env_locs[k]) +
+          f(lower_env_locs[k]);
+    }
+
+    return one_dim_dists;
   }
 
   // define these functions with vectors so we can pybind them more easily
@@ -243,7 +335,7 @@ public:
   unsigned int cells_to_index(unsigned int mx, unsigned int my) const {
     /*std::cout << "[cells_to_index] mx: " << mx << " my: " << my <<
      * std::endl;*/
-    if (mx > width || my > height) {
+    if (mx >= width || my >= height) {
       std::cout << mx << " " << my << std::endl;
       throw std::invalid_argument(
           "[cells_to_index] mx or my is greater than width or height");
@@ -254,13 +346,12 @@ public:
 
   const unsigned char *get_data() const { return data.data(); }
 
-  unsigned char get_cost(double x, double y, const std::string &layer) const {
+  unsigned char get_cost(double x, double y, Layer layer) const {
     std::vector<unsigned int> cells = world_to_map(x, y);
     return get_cost(cells[0], cells[1], layer);
   }
 
-  unsigned char get_cost(unsigned int mx, unsigned int my,
-                         const std::string &layer) const {
+  unsigned char get_cost(unsigned int mx, unsigned int my, Layer layer) const {
     return get_cost(cells_to_index(mx, my), layer);
   }
 
@@ -270,54 +361,53 @@ public:
 
   std::vector<int> get_size() const { return {width, height}; }
 
-  unsigned char get_cost(unsigned int index, const std::string &layer) const {
-    if (layer == "inflated")
+  unsigned char get_cost(unsigned int index, Layer layer) const {
+    if (layer == Layer::kInflated)
       return data[index];
-    else if (layer == "obstacles") {
+    else if (layer == Layer::kObstacles) {
       if (data[index] == occupied_values[0])
         return 0;
       return data[index];
     } else {
-      std::string err = "[get_cost] layer not found: " + layer;
+      std::string err = "[get_cost] layer must be kInflated or kObstacles";
       throw std::invalid_argument(err);
     }
 
     return data[index];
   }
 
-  unsigned char get_cost(unsigned int index, const std::string &layer) {
-    if (layer == "inflated")
+  unsigned char get_cost(unsigned int index, Layer layer) {
+    if (layer == Layer::kInflated)
       return data[index];
-    else if (layer == "obstacles") {
+    else if (layer == Layer::kInflated) {
       if (data[index] == occupied_values[0])
         return 0;
       return data[index];
     } else {
-      std::string err = "[get_cost] layer not found: " + layer;
+      std::string err = "[get_cost] layer must be kInflated or kObstacles";
       throw std::invalid_argument(err);
     }
 
     return data[index];
   }
 
-  bool is_occupied(double x, double y, const std::string &layer) const {
+  bool is_occupied(double x, double y, Layer layer) const {
     std::vector<unsigned int> cells = world_to_map(x, y);
     return is_occupied(cells[0], cells[1], layer);
   }
 
-  bool is_occupied(unsigned int mx, unsigned int my,
-                   const std::string &layer) const {
+  bool is_occupied(unsigned int mx, unsigned int my, Layer layer) const {
     return is_occupied(cells_to_index(mx, my), layer);
   }
 
-  bool is_occupied(unsigned int index, const std::string &layer) const {
+  bool is_occupied(unsigned int index, Layer layer) const {
     unsigned char cost = get_cost(index, layer);
     return std::find(occupied_values.begin(), occupied_values.end(), cost) !=
            occupied_values.end();
   }
 
   bool raycast(unsigned int sx, unsigned int sy, unsigned int ex,
-               unsigned int ey, double &x, double &y, const std::string &layer,
+               unsigned int ey, double &x, double &y, Layer layer,
                std::vector<unsigned char> *test_val = nullptr,
                unsigned int max_range = 1e6) {
 
@@ -372,8 +462,7 @@ public:
   // https://docs.ros.org/en/api/costmap_2d/html/costmap__2d_8h_source.html
   bool bresenham(unsigned int abs_da, unsigned int abs_db, int error_b,
                  int offset_a, int offset_b, unsigned int offset,
-                 unsigned int max_range, unsigned int &term,
-                 const std::string layer,
+                 unsigned int max_range, unsigned int &term, Layer layer,
                  const std::vector<unsigned char> &test_val) {
     bool ray_hit = false;
     unsigned int end = std::min(max_range, abs_da);
@@ -450,7 +539,7 @@ public:
           continue;
         }
 
-        if (is_occupied(i, j, "inflated"))
+        if (is_occupied(i, j, Layer::kInflated))
           known_occupied_inds.insert(idx);
       }
     }
@@ -466,45 +555,6 @@ public:
   std::vector<unsigned char> get_no_info_values() const {
     return no_information_values;
   }
-
-  // void push_trajectory(std::vector<rfn_state_t> &traj, double thresh_dist =
-  // .1,
-  //                      int max_iters = 100) {
-  //   if (!use_sdf)
-  //     throw std::invalid_argument(
-  //         "[get_signed_distance] SDF not generated, use_sdf is false");
-  //
-  //   double step_size = resolution / 2.0;
-  //   for (rfn_state_t &x : traj) {
-  //     // perform gradient descent on point if it is too close to obstacles
-  //     double dist;
-  //     try {
-  //       dist = get_signed_dist(x.pos(0), x.pos(1));
-  //     } catch (...) {
-  //       return;
-  //     }
-  //     Eigen::Vector2d p = x.pos.head(2);
-  //     if (dist < thresh_dist) {
-  //       for (int i = 0; i < max_iters && dist < thresh_dist; ++i) {
-  //         // get normalized gradient vector to obstacle
-  //         std::vector<double> d = get_dist_grad(p(0), p(1));
-  //         Eigen::Vector2d grad = {d[0], d[1]};
-  //         try {
-  //           Eigen::Vector2d tmp = p + step_size * grad;
-  //           dist = get_signed_dist(tmp[0], tmp[1]);
-  //         } catch (...) {
-  //           x.pos.head(2) = p;
-  //           return;
-  //         }
-  //
-  //         p = p + step_size * grad;
-  //       }
-  //
-  //       // update trajectory
-  //       x.pos.head(2) = p;
-  //     }
-  //   }
-  // }
 };
 typedef OccupancyGrid occupancy_grid_t;
 

@@ -38,8 +38,7 @@ public:
   void set_destination(int x, int y);
   void set_map(const std::vector<unsigned char> &map, int sizeX, int sizeY,
                double originX, double originY, double resolution);
-  void set_util(const map_util::occupancy_grid_t &map,
-                const std::string &layer);
+  void set_util(const map_util::occupancy_grid_t &map, map_util::Layer layer);
   int JPS();
 
   std::vector<Eigen::Vector2d> getPath(bool simplify = true);
@@ -74,7 +73,7 @@ private:
   std::vector<unsigned char> _map;
   map_util::occupancy_grid_t _map_util;
 
-  std::string _layer;
+  map_util::Layer _layer;
 
   int sizeX, sizeY, startX, startY, destX, destY, goalInd;
   double occupied_val, originX, originY, resolution;
