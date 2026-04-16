@@ -13,7 +13,6 @@
 #include <faster/solver_utils.hpp>
 
 using namespace GiNaC;
-using namespace termcolor;
 using namespace faster;
 
 void SolverGurobi::StopExecution() {
@@ -573,10 +572,9 @@ bool SolverGurobi::genNewTraj() {
   /*     i        = i - factor_increment_)*/
   {
     if (runtime_s_ > max_solver_time) {
-      std::cout << red
-                << "SolverGurobi::genNewTraj() - Solver took too long, "
+      std::cout << "SolverGurobi::genNewTraj() - Solver took too long, "
                    "returning false"
-                << runtime_s_ << " > " << max_solver_time << reset << std::endl;
+                << runtime_s_ << " > " << max_solver_time << std::endl;
       return false;
     }
 

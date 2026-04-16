@@ -7,6 +7,7 @@
 // #include <grid_map_ros/GridMapRosConverter.hpp>
 // #include <grid_map_ros/grid_map_ros.hpp>
 // #include <grid_map_sdf/SignedDistance2d.hpp>
+#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <unordered_set>

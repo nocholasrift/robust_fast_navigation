@@ -1,6 +1,8 @@
 #pragma once
 
+#ifdef GUROBI_FOUND
 #include <gurobi_c++.h>
+#endif
 
 #include <Eigen/Core>
 #include <stdexcept>
@@ -184,6 +186,7 @@ public:
   static constexpr unsigned int kCubicDegree = 3;
 };
 
+#ifdef GUROBI_FOUND
 struct GVec;
 
 // seems compiler doesn't like separation of template
@@ -340,3 +343,4 @@ GEVecBase<T> operator*(const Eigen::MatrixXd &lhs, const GEVecBase<T> &rhs) {
 
   return ret;
 }
+#endif

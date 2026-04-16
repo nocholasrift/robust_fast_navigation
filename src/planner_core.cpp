@@ -3,13 +3,18 @@
 #include "robust_fast_navigation/rfn_types.h"
 #include <robust_fast_navigation/JPS.h>
 #include <robust_fast_navigation/planner_core.h>
+#include <robust_fast_navigation/termcolor.hpp>
 
 #include <memory>
 
-#ifdef CERES_FOUND
+#if defined(CERES_FOUND) && defined(GUROBI_FOUND)
 #include "robust_fast_navigation/contour_wrapper.h"
 #endif
+#ifdef GUROBI_FOUND
 #include "robust_fast_navigation/faster_wrapper.h"
+#endif
+// #include "robust_fast_navigation/faster_wrapper.h"
+
 #include "robust_fast_navigation/gcopter_wrapper.h"
 #include "robust_fast_navigation/solver_base.h"
 #include "robust_fast_navigation/traj_util.h"
@@ -25,7 +30,7 @@ Planner::Planner() {
 
   _traj = {};
 
-  _solver = std::make_unique<FasterWrapper>();
+  _solver = std::make_unique<GcopterWrapper>();
 }
 
 Planner::~Planner() {}
@@ -33,11 +38,13 @@ Planner::~Planner() {}
 void Planner::set_params(const planner_params &params) {
   _params = params;
 
-  if (_params.SOLVER == "faster")
-    _solver = std::make_unique<FasterWrapper>();
-  else if (_params.SOLVER == "gcopter")
+  if (_params.SOLVER == "gcopter")
     _solver = std::make_unique<GcopterWrapper>();
-#ifdef CERES_FOUND
+#ifdef GUROBI_FOUND
+  else if (_params.SOLVER == "faster")
+    _solver = std::make_unique<FasterWrapper>();
+#endif
+#if defined(CERES_FOUND) && defined(GUROBI_FOUND)
   else if (_params.SOLVER == "contour")
     _solver = std::make_unique<ContourWrapper>();
 #endif
@@ -328,7 +335,7 @@ PlannerStatus Planner::plan(double horizon,
     return PlannerStatus::TRAJ_GEN_FAIL;
   }
 
-#if CERES_FOUND
+#if defined(CERES_FOUND) && defined(GUROBI_FOUND)
   if (_params.SOLVER == "contour") {
     ContourWrapper *contour_solver =
         dynamic_cast<ContourWrapper *>(_solver.get());
