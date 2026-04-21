@@ -196,8 +196,30 @@ public:
       compute_sdf(_sdf.value(), layer);
     }
 
-    std::vector<unsigned int> m_coords = world_to_map(x, y);
-    return _sdf.value()(m_coords[1], m_coords[0]);
+    // bilinear interpolation
+    double mx = (x - origin_x) / resolution;
+    double my = (y - origin_y) / resolution;
+
+    int x0 = (int)std::floor(mx);
+    int y0 = (int)std::floor(my);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    x0 = std::clamp(x0, 0, width - 1);
+    x1 = std::clamp(x1, 0, width - 1);
+    y0 = std::clamp(y0, 0, height - 1);
+    y1 = std::clamp(y1, 0, height - 1);
+
+    double tx = mx - std::floor(mx);
+    double ty = my - std::floor(my);
+
+    double v00 = _sdf.value()(y0, x0);
+    double v10 = _sdf.value()(y0, x1);
+    double v01 = _sdf.value()(y1, x0);
+    double v11 = _sdf.value()(y1, x1);
+
+    return (1 - tx) * (1 - ty) * v00 + tx * (1 - ty) * v10 +
+           (1 - tx) * ty * v01 + tx * ty * v11;
   }
 
   void compute_sdf(Eigen::MatrixXd &sdf, Layer layer) {
