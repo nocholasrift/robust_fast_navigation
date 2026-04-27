@@ -40,8 +40,6 @@ if(CXX)
     endif()
 endif()
 
-message(WARNING "CPP LIB: ${GUROBI_CXX_LIBRARY}")
-message(WARNING "C LIB: ${GUROBI_C_LIBRARY}")
 set(GUROBI_LIBRARIES ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY})
 
 include(FindPackageHandleStandardArgs)

@@ -5,178 +5,205 @@ FasterWrapper::FasterWrapper() {}
 
 FasterWrapper::~FasterWrapper() {}
 
-void FasterWrapper::set_params(const planner_params_t& params)
-{
-    // solver params
-    double w_max = params.W_MAX;
-    double v_max = params.V_MAX;
-    double a_max = params.A_MAX;
-    double j_max = params.J_MAX;
+void FasterWrapper::set_params(const planner_params_t &params) {
+  // solver params
+  double w_max = params.W_MAX;
+  double v_max = params.V_MAX;
+  double a_max = params.A_MAX;
+  double j_max = params.J_MAX;
 
-    double limits[3]        = {v_max, a_max, j_max};
-    double factor_init      = params.DT_FACTOR_INIT;
-    double factor_final     = params.DT_FACTOR_FINAL;
-    double factor_increment = params.DT_FACTOR_INCREMENT;
+  double limits[3] = {v_max, a_max, j_max};
+  double factor_init = params.DT_FACTOR_INIT;
+  double factor_final = params.DT_FACTOR_FINAL;
+  double factor_increment = params.DT_FACTOR_INCREMENT;
 
-    std::cout << "[Gurobi Solver] Loaded params: " << std::endl;
-    std::cout << "\tW_MAX: " << w_max << std::endl;
-    std::cout << "\tV_MAX: " << v_max << std::endl;
-    std::cout << "\tA_MAX: " << a_max << std::endl;
-    std::cout << "\tJ_MAX: " << j_max << std::endl;
-    std::cout << "\tDT_FACTOR_INIT: " << factor_init << std::endl;
-    std::cout << "\tDT_FACTOR_FINAL: " << factor_final << std::endl;
-    std::cout << "\tDT_FACTOR_INCREMENT: " << factor_increment << std::endl;
-    std::cout << "\tMAX_SOLVE_TIME: " << params.MAX_SOLVE_TIME << std::endl;
+  std::cout << "[Gurobi Solver] Loaded params: " << std::endl;
+  std::cout << "\tW_MAX: " << w_max << std::endl;
+  std::cout << "\tV_MAX: " << v_max << std::endl;
+  std::cout << "\tA_MAX: " << a_max << std::endl;
+  std::cout << "\tJ_MAX: " << j_max << std::endl;
+  std::cout << "\tDT_FACTOR_INIT: " << factor_init << std::endl;
+  std::cout << "\tDT_FACTOR_FINAL: " << factor_final << std::endl;
+  std::cout << "\tDT_FACTOR_INCREMENT: " << factor_increment << std::endl;
+  std::cout << "\tMAX_SOLVE_TIME: " << params.MAX_SOLVE_TIME << std::endl;
 
-    _solver.setN(params.N_SEGMENTS);
-    _solver.createVars();
-    _solver.setDC(params.SOLVER_TRAJ_DT);
-    _solver.setBounds(limits);
-    _solver.setWMax(params.W_MAX);
-    _solver.setForceFinalConstraint(params.FORCE_FINAL_CONSTRAINT);
-    _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final, factor_increment);
-    _solver.setThreads(params.N_THREADS);
-    _solver.setVerbose(params.VERBOSE);
-    _solver.setUseMinvo(params.USE_MINVO);
-    _solver.setMaxSolverTime(params.MAX_SOLVE_TIME);
+  _solver.setN(params.N_SEGMENTS);
+  _solver.createVars();
+  _solver.setDC(params.SOLVER_TRAJ_DT);
+  _solver.setBounds(limits);
+  _solver.setWMax(params.W_MAX);
+  _solver.setForceFinalConstraint(params.FORCE_FINAL_CONSTRAINT);
+  _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final,
+                                               factor_increment);
+  _solver.setThreads(params.N_THREADS);
+  _solver.setVerbose(params.VERBOSE);
+  _solver.setUseMinvo(params.USE_MINVO);
+  _solver.setMaxSolverTime(params.MAX_SOLVE_TIME);
 
-    _params = params;
+  _params = params;
 }
 
-bool FasterWrapper::setup(const Eigen::MatrixXd& start, const Eigen::MatrixXd& end,
-                          const std::vector<Eigen::MatrixX4d>& polys)
-{
-    // set initial and final positions for solver
-    faster::state initialState;
-    faster::state finalState;
+bool FasterWrapper::setup(const Eigen::MatrixXd &start,
+                          const Eigen::MatrixXd &end,
+                          const std::vector<Eigen::MatrixX4d> &polys) {
+  // set initial and final positions for solver
+  faster::state initialState;
+  faster::state finalState;
 
-    initialState.setPos(start(0, 0), start(1, 0), start(2, 0));
-    initialState.setVel(start(0, 1), start(1, 1), start(2, 1));
-    initialState.setAccel(start(0, 2), start(1, 2), start(2, 2));
-    initialState.setJerk(start(0, 3), start(1, 3), start(2, 3));
+  initialState.setPos(start(0, 0), start(1, 0), start(2, 0));
+  initialState.setVel(start(0, 1), start(1, 1), start(2, 1));
+  initialState.setAccel(start(0, 2), start(1, 2), start(2, 2));
+  initialState.setJerk(start(0, 3), start(1, 3), start(2, 3));
 
-    finalState.setPos(end.col(0));
-    finalState.setVel(end.col(1));
-    finalState.setAccel(end.col(2));
-    finalState.setJerk(end.col(3));
+  if (initialState.vel.norm() > 1e-3) {
+    std::cout << "init vel: "
+              << initialState.vel.transpose() / initialState.vel.norm() << "\n";
+  }
 
-    _solver.setX0(initialState);
-    _solver.setXf(finalState);
-    _solver.setForceFinalConstraint(polys.size() == 1);
+  finalState.setPos(end.col(0));
+  finalState.setVel(end.col(1));
+  finalState.setAccel(end.col(2));
+  finalState.setJerk(end.col(3));
 
-    double factor_init      = _params.DT_FACTOR_INIT;
-    double factor_final     = _params.DT_FACTOR_FINAL;
-    double factor_increment = _params.DT_FACTOR_INCREMENT;
+  _solver.setX0(initialState);
+  _solver.setXf(finalState);
+  _solver.setForceFinalConstraint(polys.size() == 1);
 
-    if (polys.size() == 1)
-      _solver.setFactorInitialAndFinalAndIncrement(1, factor_final, factor_increment);
-    else 
-      _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final, factor_increment);
-      
+  double factor_init = _params.DT_FACTOR_INIT;
+  double factor_final = _params.DT_FACTOR_FINAL;
+  double factor_increment = _params.DT_FACTOR_INCREMENT;
 
-    // set polygons
-    _solver.setPolytopes(polys);
+  if (polys.size() == 1)
+    _solver.setFactorInitialAndFinalAndIncrement(1, factor_final,
+                                                 factor_increment);
+  else
+    _solver.setFactorInitialAndFinalAndIncrement(factor_init, factor_final,
+                                                 factor_increment);
 
-    return true;
+  // set polygons
+  _solver.setPolytopes(polys);
+
+  return true;
 }
 
-bool FasterWrapper::solve()
-{
-    bool success = _solver.genNewTraj();
+bool FasterWrapper::solve() {
+  bool success = _solver.genNewTraj();
 
-    if (success)
-    {
-        _solver.fillX();
+  if (success) {
+    _solver.fillX();
 
-        // populate DT param field since it changes per solve
-        _params.DT = _solver.dt_;
+    // populate DT param field since it changes per solve
+    _params.DT = _solver.dt_;
 
-        _traj._segments.clear();
-        _traj._segments.reserve(_solver.N_);
+    _traj._segments.clear();
+    _traj._segments.reserve(_solver.N_);
 
-        for (int segment = 0; segment < _solver.N_; ++segment)
-        {
-            RFNSegment& piece = _traj._segments.emplace_back();
-            piece._x[0]       = Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
-                                                _solver.x[segment][1].get(GRB_DoubleAttr_X),
-                                                _solver.x[segment][2].get(GRB_DoubleAttr_X));
+    for (int segment = 0; segment < _solver.N_; ++segment) {
+      RFNSegment &piece = _traj._segments.emplace_back();
+      piece._x[0] =
+          Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][1].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][2].get(GRB_DoubleAttr_X));
 
-            piece._x[1] = Eigen::Vector3d(_solver.x[segment][3].get(GRB_DoubleAttr_X),
-                                          _solver.x[segment][4].get(GRB_DoubleAttr_X),
-                                          _solver.x[segment][5].get(GRB_DoubleAttr_X));
+      piece._x[1] =
+          Eigen::Vector3d(_solver.x[segment][3].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][4].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][5].get(GRB_DoubleAttr_X));
 
-            piece._x[2] = Eigen::Vector3d(_solver.x[segment][6].get(GRB_DoubleAttr_X),
-                                          _solver.x[segment][7].get(GRB_DoubleAttr_X),
-                                          _solver.x[segment][8].get(GRB_DoubleAttr_X));
+      piece._x[2] =
+          Eigen::Vector3d(_solver.x[segment][6].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][7].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][8].get(GRB_DoubleAttr_X));
 
-            piece._x[3]     = Eigen::Vector3d(_solver.x[segment][9].get(GRB_DoubleAttr_X),
-                                              _solver.x[segment][10].get(GRB_DoubleAttr_X),
-                                              _solver.x[segment][11].get(GRB_DoubleAttr_X));
-            piece._duration = _solver.dt_;
-        }
+      piece._x[3] =
+          Eigen::Vector3d(_solver.x[segment][9].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][10].get(GRB_DoubleAttr_X),
+                          _solver.x[segment][11].get(GRB_DoubleAttr_X));
+      piece._duration = _solver.dt_;
     }
+  }
 
-    return success;
+  return success;
 }
 
-std::vector<rfn_state_t> FasterWrapper::get_trajectory()
-{
-    std::vector<rfn_state_t> ret;
-    ret.reserve(_solver.X_temp_.size());
-    for (const faster::state& st : _solver.X_temp_)
-    {
-        rfn_state_t& rfn_st = ret.emplace_back();
-        rfn_st.pos          = st.pos;
-        rfn_st.vel          = st.vel;
-        rfn_st.accel        = st.accel;
-        rfn_st.jerk         = st.jerk;
-        rfn_st.t            = st.t;
-    }
+Eigen::MatrixXd FasterWrapper::get_ctrl_pts() {
+  int n_segments = _solver.N_;
+  constexpr int dim = 2;
+  constexpr int cps_per_segment = 4;
+  Eigen::MatrixXd cps(cps_per_segment * n_segments, dim);
 
-    return ret;
+  for (int segment = 0; segment < n_segments; ++segment) {
+    std::vector<GRBLinExpr> cp0 = _solver.getCP0(segment);
+    std::vector<GRBLinExpr> cp1 = _solver.getCP1(segment);
+    std::vector<GRBLinExpr> cp2 = _solver.getCP2(segment);
+    std::vector<GRBLinExpr> cp3 = _solver.getCP3(segment);
+
+    int base_ind = cps_per_segment * segment;
+    cps.row(base_ind + 0) << cp0[0].getValue(), cp0[1].getValue();
+    cps.row(base_ind + 1) << cp1[0].getValue(), cp1[1].getValue();
+    cps.row(base_ind + 2) << cp2[0].getValue(), cp2[1].getValue();
+    cps.row(base_ind + 3) << cp3[0].getValue(), cp3[1].getValue();
+  }
+
+  return cps;
 }
 
-double FasterWrapper::get_pos(double t, int dim)
-{
-    /*double ret;*/
-    /**/
-    /*// find segment*/
-    /*double dt   = _solver.dt_;*/
-    /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
-    /**/
-    /*try*/
-    /*{*/
-    /*    ret = _solver.getPos(segment, t - segment * dt, dim).getValue();*/
-    /*}*/
-    /*catch (const GRBException& e)*/
-    /*{*/
-    /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
-    /*    std::cerr << "segment " << segment << std::endl;*/
-    /*    exit(1);*/
-    /*}*/
-    /*return ret;*/
-    return _traj.getPos(t)[dim];
+std::vector<rfn_state_t> FasterWrapper::get_trajectory() {
+  std::vector<rfn_state_t> ret;
+  ret.reserve(_solver.X_temp_.size());
+  for (const faster::state &st : _solver.X_temp_) {
+    rfn_state_t &rfn_st = ret.emplace_back();
+    rfn_st.pos = st.pos;
+    rfn_st.vel = st.vel;
+    rfn_st.accel = st.accel;
+    rfn_st.jerk = st.jerk;
+    rfn_st.t = st.t;
+  }
+
+  return ret;
 }
 
-double FasterWrapper::get_vel(double t, int dim)
-{
-    /*double ret;*/
-    /**/
-    /*// find segment*/
-    /*double dt   = _solver.dt_;*/
-    /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
-    /**/
-    /*try*/
-    /*{*/
-    /*    ret = _solver.getVel(segment, t - segment * dt, dim).getValue();*/
-    /*}*/
-    /*catch (const GRBException& e)*/
-    /*{*/
-    /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
-    /*    std::cerr << "segment " << segment << std::endl;*/
-    /*    exit(1);*/
-    /*}*/
-    /*return ret;*/
-
-    return _traj.getVel(t)[dim];
+double FasterWrapper::get_pos(double t, int dim) {
+  /*double ret;*/
+  /**/
+  /*// find segment*/
+  /*double dt   = _solver.dt_;*/
+  /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
+  /**/
+  /*try*/
+  /*{*/
+  /*    ret = _solver.getPos(segment, t - segment * dt, dim).getValue();*/
+  /*}*/
+  /*catch (const GRBException& e)*/
+  /*{*/
+  /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
+  /*    std::cerr << "segment " << segment << std::endl;*/
+  /*    exit(1);*/
+  /*}*/
+  /*return ret;*/
+  return _traj.getPos(t)[dim];
 }
+
+double FasterWrapper::get_vel(double t, int dim) {
+  /*double ret;*/
+  /**/
+  /*// find segment*/
+  /*double dt   = _solver.dt_;*/
+  /*int segment = std::min(t / dt, _solver.N_ - 1.);*/
+  /**/
+  /*try*/
+  /*{*/
+  /*    ret = _solver.getVel(segment, t - segment * dt, dim).getValue();*/
+  /*}*/
+  /*catch (const GRBException& e)*/
+  /*{*/
+  /*    std::cerr << "[Gurobi Solver] in get_pos" << e.getMessage() << '\n';*/
+  /*    std::cerr << "segment " << segment << std::endl;*/
+  /*    exit(1);*/
+  /*}*/
+  /*return ret;*/
+
+  return _traj.getVel(t)[dim];
+}
+
+RFNTrajectory FasterWrapper::get_rfn_trajectory() { return _traj; }
