@@ -146,14 +146,7 @@ if (ROS_VERSION EQUAL 1)
     message("mrs_msgs NOT FOUND")
   endif()
 
-
-
-
   catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES robust_fast_navigation
-#  CATKIN_DEPENDS geometry_msgs roscpp rospy
-#  DEPENDS system_lib
     CATKIN_DEPENDS message_runtime
   )
 
@@ -168,25 +161,4 @@ if (ROS_VERSION EQUAL 1)
     ${GUROBI_INCLUDE_DIRS}
     ${catkin_INCLUDE_DIRS}
   )
-
-  # add_executable(plan_through_map
-  #   src/JPS.cpp
-  #   src/solver.cpp
-  #   src/rfn_types.cpp
-  #   src/planner_core.cpp
-  #   src/plan_through_map.cpp
-  #   src/faster_wrapper.cpp
-  #   src/gcopter_wrapper.cpp
-  # )
-  # target_link_libraries(plan_through_map
-  #   ${PLANNER_LIBS}
-  # )
-
-  # add_executable(safety_node
-  #     src/safety_node.cpp
-  # )
-  # target_link_libraries(safety_node
-  #     ${catkin_LIBRARIES}
-  #     Eigen3::Eigen
-  # )
 endif()
