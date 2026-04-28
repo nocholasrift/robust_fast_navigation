@@ -1,10 +1,14 @@
 #ifndef ROBUST_FAST_NAVIGATION_TRAJ_UTIL_H
 #define ROBUST_FAST_NAVIGATION_TRAJ_UTIL_H
 
+#include <iostream>
+
 #include <robust_fast_navigation/rfn_types.h>
+#include <robust_fast_navigation/termcolor.hpp>
 
 namespace traj_utils {
-inline double compute_arclen(const RFNTrajectory &traj, double t0, double tf) {
+template <typename TrajType>
+inline double compute_arclen(const TrajType &traj, double t0, double tf) {
   // find arclength using trapezoid method
   double s = 0.0;
   double dt = (tf - t0) / 100.;
@@ -23,7 +27,8 @@ inline double compute_arclen(const RFNTrajectory &traj, double t0, double tf) {
   return s;
 }
 
-inline double binary_search(const RFNTrajectory &traj, double dl, double start,
+template <typename TrajType>
+inline double binary_search(const TrajType &traj, double dl, double start,
                             double end, double tolerance) {
   double t_left = start;
   double t_right = end;
@@ -50,10 +55,14 @@ inline double binary_search(const RFNTrajectory &traj, double dl, double start,
   return (t_left + t_right) / 2;
 }
 
-inline bool reparam_traj(const RFNTrajectory &traj, std::vector<double> &ss,
+template <typename TrajType>
+inline bool reparam_traj(const TrajType &traj, std::vector<double> &ss,
                          std::vector<double> &xs, std::vector<double> &ys) {
 
-  if (traj.num_segments() == 0) {
+  if (traj.numSegments() == 0) {
+    std::cout << termcolor::yellow
+              << "[reparam_traj] Warning: traj num segments was 0"
+              << termcolor::reset << std::endl;
     return false;
   }
 

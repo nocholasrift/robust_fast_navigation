@@ -1,6 +1,7 @@
 #pragma once
 
 #include <robust_fast_navigation/rfn_types.h>
+#include <robust_fast_navigation/traj_util.h>
 
 #include <Eigen/Core>
 #include <vector>
@@ -23,6 +24,9 @@ public:
   virtual double get_pos(double t, int dim) = 0;
   virtual double get_vel(double t, int dim) = 0;
   virtual void set_params(const planner_params_t &params) = 0;
+
+  virtual bool reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
+                            std::vector<double> &ys) = 0;
 
 protected:
   planner_params_t _params;

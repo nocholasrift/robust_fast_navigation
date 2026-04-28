@@ -89,9 +89,9 @@ private:
 
   double binary_search(double dl, double start, double end, double tolerance);
   double compute_arclen(double t0, double tf);
-  bool reparam_traj(const std::vector<rfn_state_t> &traj,
-                    std::vector<double> &ss, std::vector<double> &xs,
-                    std::vector<double> &ys);
+  // bool reparam_traj(const std::vector<rfn_state_t> &traj,
+  //                   std::vector<double> &ss, std::vector<double> &xs,
+  //                   std::vector<double> &ys);
 
   float sampling_cost(const Eigen::MatrixXf &cps,
                       const Eigen::MatrixXf &orig_cps, bool verbose = false);
