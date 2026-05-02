@@ -183,6 +183,7 @@ if(ROS_VERSION EQUAL 1)
   target_include_directories(planner PRIVATE
     ${PLANNER_INCLUDE_DIRS}
     ${catkin_INCLUDE_DIRS}
+    planner_ros1/include
   )
 elseif(ROS_VERSION EQUAL 2)
   find_package(ament_cmake REQUIRED)
