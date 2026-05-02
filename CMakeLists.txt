@@ -153,8 +153,8 @@ if(ROS_VERSION EQUAL 1)
   )
 
   list(APPEND ROS_PLANNER_SRCS
-    src/planner_gurobi.cpp
-    src/planner_gurobi_node.cpp
+    planner_ros1/src/planner_gurobi.cpp
+    planner_ros1/src/planner_gurobi_node.cpp
   )
   list(APPEND ROS_PLANNER_LIBS
     ${catkin_LIBRARIES}
@@ -184,4 +184,60 @@ if(ROS_VERSION EQUAL 1)
     ${PLANNER_INCLUDE_DIRS}
     ${catkin_INCLUDE_DIRS}
   )
+elseif(ROS_VERSION EQUAL 2)
+  find_package(ament_cmake REQUIRED)
+  find_package(rclcpp REQUIRED)
+  find_package(std_msgs REQUIRED)
+  find_package(geometry_msgs REQUIRED)
+  find_package(trajectory_msgs REQUIRED)
+  find_package(sensor_msgs REQUIRED)
+  find_package(visualization_msgs REQUIRED)
+  find_package(tf2 REQUIRED)
+  find_package(tf2_ros REQUIRED)
+  find_package(nav2_costmap_2d REQUIRED) # Equivalent to costmap_2d
+
+  # Add your ROS 2 specific source files (e.g., your new ROS 2 wrapper/node)
+  list(APPEND ROS2_PLANNER_SRCS
+    planner_ros2/src/planner_ros2_node.cpp
+    planner_ros2/src/planner_ros2.cpp 
+  )
+
+  add_executable(planner_node ${ROS2_PLANNER_SRCS})
+
+  target_link_libraries(planner_node
+    planner_lib
+    ${PLANNER_LIBS}
+  )
+
+  ament_target_dependencies(planner_node
+    rclcpp
+    std_msgs
+    geometry_msgs
+    sensor_msgs
+    trajectory_msgs
+    visualization_msgs
+    tf2
+    tf2_ros
+    nav2_costmap_2d
+  )
+
+  target_include_directories(planner_node PRIVATE
+    ${PLANNER_INCLUDE_DIRS}
+    planner_ros2/include
+  )
+
+  # Standard ROS 2 Install path
+  install(TARGETS planner_node
+    DESTINATION lib/${PROJECT_NAME}
+  )
+
+  # install misc files
+  install(DIRECTORY
+    planner_ros2/launch
+    planner_ros2/params
+    DESTINATION share/${PROJECT_NAME}
+  )
+
+  # This is mandatory for the root of any ROS 2 package
+  ament_package()
 endif()

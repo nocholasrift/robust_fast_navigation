@@ -84,7 +84,7 @@ public:
   double _duration;
 };
 
-class RFNTrajectory {
+class RFNTrajectory{
 public:
   RFNTrajectory() = default;
 

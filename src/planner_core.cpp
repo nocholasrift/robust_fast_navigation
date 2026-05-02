@@ -77,6 +77,15 @@ void Planner::set_start(const Eigen::MatrixXd &start) {
   _is_start_set = true;
 }
 
+// void set_start_from_traj(
+//   const Eigen::Vector3d& current_pose, 
+//   std::shared_ptr<const Trajectory> traj, 
+//   double duration_since_start)
+// {
+//   // _traj_dt = 
+//   // Eigen::Vector3d
+// }
+
 void Planner::set_goal(const Eigen::MatrixXd &goal) {
   _goal = goal;
   if (!_is_start_set) {
