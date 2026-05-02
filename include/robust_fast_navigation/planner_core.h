@@ -32,6 +32,10 @@ public:
 
   // setters
   void set_start(const Eigen::MatrixXd &start);
+  // void set_start_from_traj(
+  //   const Eigen::Vector3d& current_pose, 
+  //   std::shared_ptr<const Trajectory> traj, 
+  //   double duration_since_start);
   void set_goal(const Eigen::MatrixXd &goal);
   void set_costmap(const map_util::occupancy_grid_t &map);
 
@@ -89,9 +93,9 @@ private:
 
   double binary_search(double dl, double start, double end, double tolerance);
   double compute_arclen(double t0, double tf);
-  bool reparam_traj(const std::vector<rfn_state_t> &traj,
-                    std::vector<double> &ss, std::vector<double> &xs,
-                    std::vector<double> &ys);
+  // bool reparam_traj(const std::vector<rfn_state_t> &traj,
+  //                   std::vector<double> &ss, std::vector<double> &xs,
+  //                   std::vector<double> &ys);
 
   float sampling_cost(const Eigen::MatrixXf &cps,
                       const Eigen::MatrixXf &orig_cps, bool verbose = false);

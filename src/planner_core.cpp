@@ -77,6 +77,15 @@ void Planner::set_start(const Eigen::MatrixXd &start) {
   _is_start_set = true;
 }
 
+// void set_start_from_traj(
+//   const Eigen::Vector3d& current_pose, 
+//   std::shared_ptr<const Trajectory> traj, 
+//   double duration_since_start)
+// {
+//   // _traj_dt = 
+//   // Eigen::Vector3d
+// }
+
 void Planner::set_goal(const Eigen::MatrixXd &goal) {
   _goal = goal;
   if (!_is_start_set) {
@@ -502,33 +511,6 @@ std::vector<rfn_state_t> Planner::get_trajectory() {
   std::vector<rfn_state_t> ret;
 
   int sz = _traj.size();
-  // for (int i = 0; i < _traj.size(); ++i) {
-  //   Eigen::Vector2d pos = _traj[i].pos.head(2);
-  //   if (_map.is_occupied(pos[0], pos[1], "inflated") &&
-  //       _map.get_signed_dist(pos[0], pos[1]) < _params.TRIM_DIST) {
-  //     sz = i - 1;
-  //     std::cout << termcolor::red
-  //               << "[Planner Core] Trajectory overlaps obstacle, "
-  //               << _map.get_signed_dist(pos[0], pos[1]) << " trimming to size
-  //               "
-  //               << sz << " / " << _traj.size() << termcolor::reset <<
-  //               std::endl;
-  //     if (_prev_plan_status)
-  //       _trim_count++;
-  //     else
-  //       _trim_count = 0;
-  //
-  //     break;
-  //   }
-  // }
-
-  // if (_trim_count > 10) {
-  //   std::cout << termcolor::red
-  //             << "[Planner Core] Trajectory trimmed too many times, "
-  //             << "letting trajectory go" << termcolor::reset << std::endl;
-  //   _trim_count = 0;
-  //   return _traj;
-  // }
 
   if (sz > 0)
     ret.insert(ret.end(), _traj.begin(), _traj.begin() + sz);
@@ -546,17 +528,22 @@ std::vector<rfn_state_t> Planner::get_arclen_traj(bool refine) {
 
   // std::vector<rfn_state_t> traj = get_trajectory();
 
-  RFNTrajectory traj;
-  if (refine) {
-    traj = refine_traj();
-  } else {
-    traj = _solver->get_rfn_trajectory();
-  }
+  // RFNTrajectory traj;
+  // if (refine) {
+  //   traj = refine_traj();
+  // } else {
+  //   traj = _solver->get_rfn_trajectory();
+  // }
+  //
+  // bool status = traj_utils::reparam_traj(traj, ss, xs, ys);
+  bool status = _solver->reparam_traj(ss, xs, ys);
 
-  bool status = traj_utils::reparam_traj(traj, ss, xs, ys);
-
-  if (!status)
+  if (!status) {
+    std::cout << termcolor::yellow
+              << "[Planner] Warning: reparam traj status returned false!"
+              << termcolor::reset << std::endl;
     return {};
+  }
 
   std::vector<rfn_state_t> ret;
   ret.reserve(ss.size());
@@ -572,30 +559,6 @@ std::vector<rfn_state_t> Planner::get_arclen_traj(bool refine) {
 
   return ret;
 }
-//
-// std::vector<rfn_state_t>
-// Planner::get_arclen_traj(const std::vector<rfn_state_t> &traj) {
-//   std::vector<double> ss;
-//   std::vector<double> xs;
-//   std::vector<double> ys;
-//
-//   bool status = reparam_traj(traj, ss, xs, ys);
-//
-//   if (!status)
-//     return {};
-//
-//   std::vector<rfn_state_t> ret;
-//   ret.reserve(ss.size());
-//
-//   for (int i = 0; i < ss.size(); ++i) {
-//     rfn_state_t &x = ret.emplace_back();
-//     x.pos(0) = xs[i];
-//     x.pos(1) = ys[i];
-//     x.t = ss[i];
-//   }
-//
-//   return ret;
-// }
 
 std::vector<Eigen::Vector3d> Planner::get_cps() {
   std::vector<Eigen::Vector3d> ret;
@@ -689,110 +652,6 @@ Planner::getJPSInFree(const std::vector<Eigen::Vector2d> &path) {
 
   return ret;
 }
-
-// bool Planner::reparam_traj(const std::vector<rfn_state_t> &traj,
-//                            std::vector<double> &ss, std::vector<double> &xs,
-//                            std::vector<double> &ys) {
-//   /*_traj = _solver->get_trajectory();*/
-//
-//   if (traj.size() == 0)
-//     return false;
-//
-//   double traj_duration = traj.back().t;
-//
-//   double total_length = compute_arclen(0, traj_duration);
-//
-//   double M = 20;
-//   double ds = total_length / M;
-//
-//   ss.resize(M + 1);
-//   xs.resize(M + 1);
-//   ys.resize(M + 1);
-//
-// #ifdef CERES_FOUND
-//   if (_params.SOLVER == "contour") {
-//     // cast to contour solver
-//     /*ContourWrapper *contour_solver = dynamic_cast<ContourWrapper
-//      * *>(_solver.get());*/
-//     ds = traj_duration / M;
-//     for (int i = 0; i < M + 1; ++i) {
-//       ss[i] = i * ds;
-//       xs[i] = _solver->get_pos(ss[i], 0);
-//       ys[i] = _solver->get_pos(ss[i], 1);
-//     }
-//
-//     return true;
-//   }
-// #endif
-//
-//   double previous_ti = 0;
-//   for (int i = 0; i <= M; ++i) {
-//     double s = i * ds;
-//
-//     double ti = binary_search(s, previous_ti, traj_duration, 1e-3);
-//
-//     ss[i] = s;
-//     xs[i] = _solver->get_pos(ti, 0);
-//     ys[i] = _solver->get_pos(ti, 1);
-//
-//     previous_ti = ti;
-//   }
-//
-//   return true;
-// }
-//
-// double Planner::binary_search(double dl, double start, double end,
-//                               double tolerance) {
-//   double t_left = start;
-//   double t_right = end;
-//
-//   double prev_s = 0;
-//   double s = -1000;
-//
-//   while (fabs(prev_s - s) > tolerance) {
-//     prev_s = s;
-//
-//     double t_mid = (t_left + t_right) / 2;
-//
-//     // always interested in total arc length up to t_mid
-//     s = compute_arclen(0, t_mid);
-//
-//     // std::cout << "\ts at " << t_mid << " is " << s << std::endl;
-//
-//     if (s < dl)
-//       t_left = t_mid;
-//     else
-//       t_right = t_mid;
-//   }
-//
-//   return (t_left + t_right) / 2;
-// }
-//
-// double Planner::compute_arclen(double t0, double tf) {
-//   // find arclength using trapezoid method
-//   double s = 0.0;
-//   double dt = (tf - t0) / 100.;
-//
-//   double prev_dx = _solver->get_vel(t0, 0);
-//   double prev_dy = _solver->get_vel(t0, 1);
-//
-//   for (double t = t0 + dt; t < tf; t += dt) {
-//     double dx, dy;
-//     dx = _solver->get_vel(t, 0);
-//     dy = _solver->get_vel(t, 1);
-//
-//     // s += std::sqrt(dx * dx + dy * dy) * dt;
-//     s += .5 *
-//          (std::sqrt(dx * dx + dy * dy) +
-//           std::sqrt(prev_dx * prev_dx + prev_dy * prev_dy)) *
-//          dt;
-//
-//     prev_dx = dx;
-//     prev_dy = dy;
-//   }
-//
-//   return s;
-// }
 
 float Planner::sampling_cost(const Eigen::MatrixXf &cps,
                              const Eigen::MatrixXf &orig_cps, bool verbose) {

@@ -21,6 +21,9 @@ public:
   double get_vel(double t, int dim) override;
   void set_params(const planner_params_t &params) override;
 
+  bool reparam_traj(std::vector<double> &ss, std::vector<double> &xs,
+                    std::vector<double> &ys) override;
+
 protected:
   faster::SolverGurobi _solver;
   RFNTrajectory _traj;

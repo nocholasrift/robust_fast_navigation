@@ -1,0 +1,44 @@
+robust_planner_node:
+  ros__parameters:
+    # Solver selection: "gcopter", "faster", or "contour"
+    # solver: "faster"
+    solver: "gcopter"
+
+    # Frequency and Timing
+    planner_frequency: 0.35
+    lookahead: 0.45
+    traj_dt: 0.05
+    max_solve_time: 0.5
+    solver_traj_dt: 0.05
+
+    # Logic and Flags
+    max_deviation: 10.0
+    simplify_jps: true
+    jps_hysteresis: false
+    failsafe_count: 4
+    plan_in_free: false
+    max_dist_horizon: 10.0
+    frame: "map"
+    teleop: false
+    max_polys: 3
+    use_arclen: true
+    use_global_costmap: true
+    plan_once: false
+
+    # Clearance and Triggers
+    min_turn_clearance: -1000.0
+    trigger_trim_dist: -100.0
+
+    # Task Specific
+    is_barn: false
+    barn_goal_dist: 10.0
+    is_drone: false
+
+    # Solver Optimization Params
+    n_polys: 6
+    force_final_const: true
+    factor_init: 1.0
+    factor_final: 10.0
+    factor_increment: 1.0
+    threads: 0
+    verbose: 0

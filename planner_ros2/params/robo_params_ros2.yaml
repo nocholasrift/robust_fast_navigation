@@ -1,0 +1,8 @@
+robust_planner_node:
+  ros__parameters:
+    # Physical robot kinematic limits
+    v_max: 50.0
+    a_max: 60.0
+    j_max: 150.0
+    w_max: 1.8
+    anga_max: 6.283

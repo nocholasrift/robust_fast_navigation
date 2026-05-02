@@ -100,22 +100,22 @@ bool FasterWrapper::solve() {
 
     for (int segment = 0; segment < _solver.N_; ++segment) {
       RFNSegment &piece = _traj._segments.emplace_back();
-      piece._x[0] =
+      piece._x[RFNSegment::kPos] =
           Eigen::Vector3d(_solver.x[segment][0].get(GRB_DoubleAttr_X),
                           _solver.x[segment][1].get(GRB_DoubleAttr_X),
                           _solver.x[segment][2].get(GRB_DoubleAttr_X));
 
-      piece._x[1] =
+      piece._x[RFNSegment::kVel] =
           Eigen::Vector3d(_solver.x[segment][3].get(GRB_DoubleAttr_X),
                           _solver.x[segment][4].get(GRB_DoubleAttr_X),
                           _solver.x[segment][5].get(GRB_DoubleAttr_X));
 
-      piece._x[2] =
+      piece._x[RFNSegment::kAcc] =
           Eigen::Vector3d(_solver.x[segment][6].get(GRB_DoubleAttr_X),
                           _solver.x[segment][7].get(GRB_DoubleAttr_X),
                           _solver.x[segment][8].get(GRB_DoubleAttr_X));
 
-      piece._x[3] =
+      piece._x[RFNSegment::kJerk] =
           Eigen::Vector3d(_solver.x[segment][9].get(GRB_DoubleAttr_X),
                           _solver.x[segment][10].get(GRB_DoubleAttr_X),
                           _solver.x[segment][11].get(GRB_DoubleAttr_X));
@@ -207,3 +207,9 @@ double FasterWrapper::get_vel(double t, int dim) {
 }
 
 RFNTrajectory FasterWrapper::get_rfn_trajectory() { return _traj; }
+
+bool FasterWrapper::reparam_traj(std::vector<double> &ss,
+                                 std::vector<double> &xs,
+                                 std::vector<double> &ys) {
+  return traj_utils::reparam_traj<RFNTrajectory>(_traj, ss, xs, ys);
+}

@@ -42,8 +42,9 @@ bool GcopterWrapper::solve() {
   _traj.clear();
   bool success = !std::isinf(_solver.optimize(_traj, 1e-5));
 
-  if (success)
+  if (success) {
     _params.N_SEGMENTS = _traj.getPieceNum();
+  }
 
   return success;
 }
@@ -67,6 +68,8 @@ std::vector<rfn_state_t> GcopterWrapper::get_trajectory() {
     rfn_st.t = t;
   }
 
+  std::cout << "ret size: " << ret.size() << "\n";
+
   return ret;
 }
 
@@ -87,3 +90,10 @@ double GcopterWrapper::get_vel(double t, int dim) {
 }
 
 RFNTrajectory GcopterWrapper::get_rfn_trajectory() { return RFNTrajectory(); }
+
+bool GcopterWrapper::reparam_traj(std::vector<double> &ss,
+                                  std::vector<double> &xs,
+                                  std::vector<double> &ys) {
+
+  return traj_utils::reparam_traj<Trajectory<5>>(_traj, ss, xs, ys);
+}

@@ -74,11 +74,17 @@ public:
 
   double getDuration() const { return _duration; }
 
-  std::array<Eigen::VectorXd, 4> _x;
+  static constexpr size_t kPos = 0;
+  static constexpr size_t kVel = 1;
+  static constexpr size_t kAcc = 2;
+  static constexpr size_t kJerk = 3;
+  static constexpr size_t kDegree = 4;
+
+  std::array<Eigen::VectorXd, kDegree> _x;
   double _duration;
 };
 
-class RFNTrajectory {
+class RFNTrajectory{
 public:
   RFNTrajectory() = default;
 
@@ -180,7 +186,7 @@ public:
     return duration;
   }
 
-  unsigned int num_segments() const { return _segments.size(); }
+  unsigned int numSegments() const { return _segments.size(); }
 
   std::vector<RFNSegment> _segments;
   static constexpr unsigned int kCubicDegree = 3;

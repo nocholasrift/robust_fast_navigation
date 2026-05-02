@@ -6,8 +6,8 @@
     <!--<arg name="barn_dist" default="3.5" />-->
     <!--<arg name="param_file" default="$(find robust_fast_navigation)/params/planner.yaml" />-->
 
-    <rosparam file="$(find robust_fast_navigation)/params/planner.yaml" command="load" ns="robust_planner/" />
-    <rosparam file="$(find robust_fast_navigation)/params/robo_params.yaml" command="load" ns="robust_planner/" />
+  <rosparam file="$(find robust_fast_navigation)/planner_ros1/params/planner.yaml" command="load" ns="robust_planner/" />
+  <rosparam file="$(find robust_fast_navigation)/planner_ros1/params/robo_params.yaml" command="load" ns="robust_planner/" />
 
     <!--<node name="robust_planner" pkg="cbf_tracking" type="planner" 
            launch-prefix="lldb" output="screen">  -->
@@ -25,7 +25,7 @@
   <!--<node name="safety_node" pkg="robust_fast_navigation" type="safety_node" output="screen"/>-->
 
     <!-- <include file="$(find slam_toolbox)/launch/online_async.launch"/> -->
-    <rosparam file="$(find robust_fast_navigation)/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
-    <rosparam file="$(find robust_fast_navigation)/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
+  <rosparam file="$(find robust_fast_navigation)/planner_ros1/params/global_costmap_params.yaml" command="load" ns="robust_planner/global_costmap/" />
+  <rosparam file="$(find robust_fast_navigation)/planner_ros1/params/local_costmap_params.yaml" command="load" ns="robust_planner/local_costmap/" />
 
 </launch>

@@ -421,45 +421,6 @@ inline mrs_msgs::TrajectoryReferenceSrv convert_traj_to_mrs_srv(const trajectory
 }
 #endif
 
-inline void visualizeExpectedFailuresAlongTraj(
-    double threshold,
-    const std::vector<std::tuple<Eigen::Vector3d, double> > &expected_failures,
-    const ros::Publisher &pub)
-{
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = "map";
-    marker.header.stamp    = ros::Time::now();
-    marker.type            = visualization_msgs::Marker::SPHERE_LIST;
-    marker.action          = visualization_msgs::Marker::ADD;
-    marker.scale.x         = 0.1;
-    marker.scale.y         = 0.1;
-    marker.scale.z         = 0.1;
-
-    for (const auto &failure : expected_failures)
-    {
-        Eigen::Vector3d pos = std::get<0>(failure);
-        double t            = std::get<1>(failure);
-
-        tinycolormap::Color color =
-            tinycolormap::GetColor(t / threshold, tinycolormap::ColormapType::Viridis);
-        std_msgs::ColorRGBA color_msg;
-        color_msg.r = color.r();
-        color_msg.g = color.g();
-        color_msg.b = color.b();
-        color_msg.a = 1.0;
-
-        geometry_msgs::Point p;
-        p.x = pos[0];
-        p.y = pos[1];
-        p.z = pos[2];
-
-        marker.points.push_back(p);
-        marker.colors.push_back(color_msg);
-    }
-
-    pub.publish(marker);
-}
-
 inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
                               const ros::Publisher &meshPub, const ros::Publisher &edgePub,
                               bool highlight = false)
@@ -562,53 +523,6 @@ inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
     edgePub.publish(edgeMarker);
 
     return;
-}
-
-inline void visualizeBoundary(const Eigen::Matrix3Xd &boundary, const ros::Publisher &pub,
-                              std::string frame_id)
-{
-    // Create the Marker message
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = frame_id;  // Set the frame of reference (can change
-                                        // based on your setup)
-    marker.header.stamp = ros::Time::now();
-    marker.ns           = "corridor_boundary";
-    marker.id           = 9476;
-    marker.type         = visualization_msgs::Marker::LINE_STRIP;  // Use LINE_STRIP to connect
-                                                                   // points sequentially
-    marker.action = visualization_msgs::Marker::ADD;
-
-    // Set the color of the line (RGBA)
-    marker.color.r = 1.0;  // Red
-    marker.color.g = 0.0;  // Green
-    marker.color.b = 0.0;  // Blue
-    marker.color.a = 1.0;  // Alpha (1 = fully visible)
-
-    // Set the scale of the line (thickness)
-    marker.scale.x = 0.05;  // Line width
-
-    // Add the points from the boundary to the marker
-    for (int i = 0; i < boundary.cols(); ++i)
-    {
-        geometry_msgs::Point p;
-        p.x = boundary(0, i);  // X coordinate
-        p.y = boundary(1, i);  // Y coordinate
-        p.z = boundary(2, i);  // Z coordinate (typically 0 for 2D)
-        marker.points.push_back(p);
-    }
-
-    // Close the loop of the boundary (optional)
-    if (boundary.cols() > 1)
-    {
-        geometry_msgs::Point p;
-        p.x = boundary(0, 0);  // X coordinate of the first point
-        p.y = boundary(1, 0);  // Y coordinate of the first point
-        p.z = boundary(2, 0);  // Z coordinate (typically 0 for 2D)
-        marker.points.push_back(p);
-    }
-
-    // Publish the marker
-    pub.publish(marker);
 }
 
 inline bool reparam_traj(std::vector<double> &ss, std::vector<double> &xs,

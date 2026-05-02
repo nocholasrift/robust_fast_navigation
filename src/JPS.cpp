@@ -538,8 +538,10 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify) {
     //     std::cout << ret[i][0] << ", " << ret[i][1] << std::endl;
     // }
 
+    std::cout << "simplifying again!\n";
     ret = simplifyPath(ret);
     std::reverse(std::begin(ret), std::end(ret));
+    std::cout << "done\n";
 
     // std::cout << "path after second simplify is" << std::endl;
     // for(int i = 0; i < ret.size(); i++)
@@ -548,13 +550,17 @@ std::vector<Eigen::Vector2d> JPSPlan::getPath(bool simplify) {
     // }
 
     // Logic from JPS3D
-    for (int k = 1; k < ret.size() - 1;) {
+    std::vector<Eigen::Vector2d> simplified;
+    simplified.push_back(ret.front());
+
+    for (int k = 1; k < ret.size() - 1; ++k) {
       Eigen::Vector2d p = (ret[k + 1] - ret[k]) - (ret[k] - ret[k - 1]);
-      if (fabs(p[0]) + fabs(p[1]) <= 1e-2)
-        ret.erase(ret.begin() + i);
-      else
-        k++;
+      if (p.lpNorm<1>() > 1e-2) {
+        simplified.push_back(ret[k]);
+      }
     }
+    simplified.push_back(ret.back());
+    ret = std::move(simplified);
   }
 
   for (int k = 0; k < ret.size(); k++) {
