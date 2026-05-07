@@ -204,18 +204,21 @@ void PlannerROS::spin()
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
-    if(_costmap_thread.joinable()){
-      _costmap_thread.join();
+    if (_costmap_thread.joinable())
+    {
+        _costmap_thread.join();
     }
 
     ros::waitForShutdown();
 }
 
-void PlannerROS::costmapUpdateLoop(){
-    ros::Rate rate(20); // 20Hz, tune as needed
+void PlannerROS::costmapUpdateLoop()
+{
+    ros::Rate rate(3);  // 20Hz, tune as needed
     while (ros::ok())
     {
-        if (_is_costmap_started){
+        if (_is_costmap_started)
+        {
             _costmap->updateMap();
             {
                 std::lock_guard<std::mutex> lk(_plan_mutex);
@@ -610,7 +613,7 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
 
     // _costmap->updateMap();
     std::unique_lock<std::mutex> lk(_plan_mutex);
-    _costmap_cv.wait(lk, [this]{ return _costmap_fresh; });
+    _costmap_cv.wait(lk, [this] { return _costmap_fresh; });
     _costmap_fresh = false;
 
     ros::Time start = ros::Time::now();
@@ -627,7 +630,6 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     std::vector<unsigned char> unknown_values  = {costmap_2d::NO_INFORMATION};
     unsigned char *data                        = cmap.getCharMap();
 
-    
     if (!_is_grid_map_started)
     {
         _occ_grid = std::make_unique<map_util::occupancy_grid_t>(
@@ -656,10 +658,11 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     if (!plan(count >= _failsafe_count))
     {
         count++;
-        if (count >= _failsafe_count){
-          _curr_horizon *= .9;
-          _curr_horizon = std::max(0.3, _curr_horizon);
-        } 
+        if (count >= _failsafe_count)
+        {
+            _curr_horizon *= .9;
+            _curr_horizon = std::max(0.3, _curr_horizon);
+        }
     }
     else
     {

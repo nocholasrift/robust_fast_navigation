@@ -40,6 +40,8 @@ private:
 
   std::unordered_set<uint64_t> known_occupied_inds;
 
+  int unknown_border_thickness_cells = 0;
+
 public:
   std::optional<Eigen::MatrixXd> _sdf;
 
@@ -100,7 +102,7 @@ public:
   void update(int w, int h, double res, double ox, double oy,
               const std::vector<unsigned char> &d,
               const std::vector<unsigned char> &ov,
-              const std::vector<unsigned char> &niv) {
+              const std::vector<unsigned char> &niv, int border_padding_cells = 20) {
     if (w != width || h != height || origin_x != ox || origin_y != oy ||
         reset_counter++ > 10) {
       std::cout
@@ -121,11 +123,13 @@ public:
     data = d;
 
     update_occupied_obstacles();
+
+    force_unknown_boundaries();
   }
 
   void update(int w, int h, double res, double ox, double oy, unsigned char *d,
               const std::vector<unsigned char> &ov,
-              const std::vector<unsigned char> &niv) {
+              const std::vector<unsigned char> &niv, int border_padding_cells = 20) {
     if (w != width || h != height || origin_x != ox || origin_y != oy ||
         reset_counter++ > 10) {
       std::cout
@@ -146,11 +150,50 @@ public:
     data = std::vector<unsigned char>(d, d + (w * h));
 
     update_occupied_obstacles();
+
+    force_unknown_boundaries();
+  }
+
+  void force_unknown_boundaries() {
+      if (unknown_border_thickness_cells <= 0) return;
+      if (no_information_values.empty()) return;
+
+      unsigned char unknown_val = no_information_values[0];
+
+      int thickness = std::min(unknown_border_thickness_cells, std::min(width, height) / 2);
+
+      for (int t = 0; t < thickness; ++t) {
+          for (int i = 0; i < width; ++i) {
+              // 1. Clear Top Row (y = t)
+              unsigned int top_idx = t * width + i;
+              data[top_idx] = unknown_val;
+              known_occupied_inds.erase(top_idx); // Remove from obstacle tracking
+
+              // 2. Clear Bottom Row (y = height - 1 - t)
+              unsigned int bot_idx = (height - 1 - t) * width + i;
+              data[bot_idx] = unknown_val;
+              known_occupied_inds.erase(bot_idx);
+          }
+
+          for (int j = 0; j < height; ++j) {
+              // 3. Clear Left Column (x = t)
+              unsigned int left_idx = j * width + t;
+              data[left_idx] = unknown_val;
+              known_occupied_inds.erase(left_idx);
+
+              // 4. Clear Right Column (x = width - 1 - t)
+              unsigned int right_idx = j * width + (width - 1 - t);
+              data[right_idx] = unknown_val;
+              known_occupied_inds.erase(right_idx);
+          }
+      }
   }
 
   std::vector<double> clamp_point_to_bounds(const std::vector<double> &current,
                                             const std::vector<double> &goal) {
-    double epsilon = .95;
+    /*double epsilon = .95;*/
+    std::cout << "CLAMPING" << std::endl;
+    double epsilon = .99;
     double x_min = origin_x;
     double y_min = origin_y;
     double x_max = x_min + (width)*resolution;
@@ -182,10 +225,10 @@ public:
     int count = 0;
     t_max *= epsilon;
 
-    while (is_occupied(current[0] + (t_max * epsilon) * dx,
-                       current[1] + (t_max * epsilon) * dy, Layer::kInflated) &&
-           count++ < 10)
-      t_max *= epsilon;
+    /*while (is_occupied(current[0] + (t_max * epsilon) * dx,*/
+    /*                   current[1] + (t_max * epsilon) * dy, Layer::kInflated) &&*/
+    /*       count++ < 10)*/
+    /*  t_max *= epsilon;*/
 
     return {current[0] + (t_max)*dx, current[1] + (t_max)*dy};
   }

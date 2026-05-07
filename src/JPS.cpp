@@ -438,6 +438,9 @@ int JPSPlan::JPS() {
   /*if (_map[destY * sizeX + destX] == occupied_val)*/
   if (_map_util.is_occupied((unsigned int)destX, (unsigned int)destY, _layer)) {
     std::cerr << "destination is in occupied space" << std::endl;
+    std::cerr << "cost: " << (unsigned int)_map_util.get_cost((unsigned int)destX, (unsigned int)destY, _layer) << std::endl;
+    auto world_pos = _map_util.map_to_world((unsigned int)destX, (unsigned int)destY);
+    std::cerr << "pos: " << world_pos[0] << " " << world_pos[1] << std::endl;
     return IN_OCCUPIED_SPACE;
   }
 
