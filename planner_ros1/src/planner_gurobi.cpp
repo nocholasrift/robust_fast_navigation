@@ -199,10 +199,32 @@ void PlannerROS::spin()
 
     _is_costmap_started = true;
 
+    _costmap_thread = std::thread(&PlannerROS::costmapUpdateLoop, this);
+
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
+    if(_costmap_thread.joinable()){
+      _costmap_thread.join();
+    }
+
     ros::waitForShutdown();
+}
+
+void PlannerROS::costmapUpdateLoop(){
+    ros::Rate rate(20); // 20Hz, tune as needed
+    while (ros::ok())
+    {
+        if (_is_costmap_started){
+            _costmap->updateMap();
+            {
+                std::lock_guard<std::mutex> lk(_plan_mutex);
+                _costmap_fresh = true;
+            }
+            _costmap_cv.notify_one();
+        }
+        rate.sleep();
+    }
 }
 
 /**********************************************************************
@@ -586,7 +608,10 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     ************* UPDATE MAP *************
     **************************************/
 
-    _costmap->updateMap();
+    // _costmap->updateMap();
+    std::unique_lock<std::mutex> lk(_plan_mutex);
+    _costmap_cv.wait(lk, [this]{ return _costmap_fresh; });
+    _costmap_fresh = false;
 
     ros::Time start = ros::Time::now();
 
@@ -602,6 +627,7 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     std::vector<unsigned char> unknown_values  = {costmap_2d::NO_INFORMATION};
     unsigned char *data                        = cmap.getCharMap();
 
+    
     if (!_is_grid_map_started)
     {
         _occ_grid = std::make_unique<map_util::occupancy_grid_t>(
@@ -630,7 +656,10 @@ void PlannerROS::controlLoop(const ros::TimerEvent &)
     if (!plan(count >= _failsafe_count))
     {
         count++;
-        if (count >= _failsafe_count) _curr_horizon *= .9;
+        if (count >= _failsafe_count){
+          _curr_horizon *= .9;
+          _curr_horizon = std::max(0.3, _curr_horizon);
+        } 
     }
     else
     {
@@ -1027,7 +1056,7 @@ void PlannerROS::mapPublisher(const ros::TimerEvent &)
 {
     if (!_is_costmap_started) return;
 
-    _costmap->updateMap();
+    // _costmap->updateMap();
     const costmap_2d::Costmap2D &cmap = *_costmap->getCostmap();
 
     nav_msgs::OccupancyGrid grid;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <thread>
+#include <condition_variable>
 #include <string_view>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <geometry_msgs/Point.h>
@@ -56,6 +58,9 @@ private:
   void publishCPS();
   void getMPCParams(ros::NodeHandle &nh);
   void projectIntoMap(const Eigen::Vector2d &goal);
+
+  // thread
+  void costmapUpdateLoop();
 
 
   Eigen::VectorXd _odom;
@@ -192,6 +197,11 @@ private:
   int _n_threads;
   int _solver_verbose;
   int _failsafe_count;
+
+  std::thread _costmap_thread;
+  std::mutex _plan_mutex;
+  std::condition_variable _costmap_cv;
+  bool _costmap_fresh = false;
 
   nav_msgs::OccupancyGrid map;
 };
