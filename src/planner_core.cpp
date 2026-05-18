@@ -63,6 +63,10 @@ void Planner::set_params(const planner_params &params) {
   double v_max = params.V_MAX;
   double a_max = params.A_MAX;
   double j_max = params.J_MAX;
+  std::cout << "W_MAX: " << w_max << std::endl;
+  std::cout << "V_MAX: " << v_max << std::endl;
+  std::cout << "A_MAX: " << a_max << std::endl;
+  std::cout << "J_MAX: " << j_max << std::endl;
 
   double limits[3] = {v_max, a_max, j_max};
   double factor_init = params.DT_FACTOR_INIT;
@@ -369,7 +373,6 @@ PlannerStatus Planner::plan(double horizon,
   // ensure trajectory does not overlap lethal obstacles
   // for (int i = 0; i < _traj.size(); ++i) {
   //   Eigen::Vector2d pos = _traj[i].pos.head(2);
-  //   /*if (_map.is_occupied(pos[0], pos[1], "obstacles"))*/
   //   if (_map.get_cost(pos(0), pos(1), map_util::Layer::kObstacles)) {
   //     std::cout << termcolor::red
   //               << "[Planner Core] Trajectory overlaps obstacle"

@@ -176,7 +176,7 @@ void SolverGurobi::setPolytopes(
 }
 
 void SolverGurobi::setPolytopesConstraints() {
-  // std::cout << "Setting POLYTOPES=" << polytopes_cons.size() << std::endl;
+  std::cout << "Setting POLYTOPES=" << polytopes_cons.size() << std::endl;
 
   // Remove previous polytopes constraints
   for (int i = 0; i < polytopes_cons.size(); i++) {
@@ -222,9 +222,7 @@ void SolverGurobi::setPolytopesConstraints() {
       b.push_back(row);
     }
 
-    // std::cout << "NUMBER OF POLYTOPES=" << polytopes_.size() << std::endl;
-    // std::cout << "NUMBER OF FACES of the first polytope=" <<
-    // polytopes_[0].A().rows() << std::endl;
+    std::cout << "NUMBER OF POLYTOPES=" << polytopes_.size() << std::endl;
 
     Eigen::MatrixXd minvo_inv;
     std::vector<std::vector<double>> minvo_inv_std;
@@ -591,9 +589,13 @@ bool SolverGurobi::genNewTraj() {
 
     std::cout << "solving now!" << std::endl;
     try {
+     std::cout << "hello???" << std::endl;
       findDT(i);
+     std::cout << "hello???" << std::endl;
       /*setMaxConstraints();*/
+      std::cout << "poly constraints" << std::endl;
       setPolytopesConstraints();
+      std::cout << "done poly constraints" << std::endl;
       // setOcclusionConstraint();
       setConstraintsX0();
       setConstraintsXf();
@@ -830,8 +832,9 @@ double SolverGurobi::getDTInitial() {
   t_vy = fabs(xf_[1] - x0_[1]) / v_max_;
   t_vz = fabs(xf_[2] - x0_[2]) / v_max_;
 
-  /*  printf("times vel: t_ax, t_ay, t_az:\n");
-    std::cout << t_vx << "  " << t_vy << "  " << t_vz << std::endl;*/
+  std::cout << "vmax is: " << v_max_ << std::endl;
+    printf("times vel: t_ax, t_ay, t_az:\n");
+    std::cout << t_vx << "  " << t_vy << "  " << t_vz << std::endl;
 
   float jerkx = copysign(1, xf_[0] - x0_[0]) * j_max_;
   float jerky = copysign(1, xf_[1] - x0_[1]) * j_max_;
@@ -849,10 +852,10 @@ double SolverGurobi::getDTInitial() {
   Eigen::Vector4d coeff_jy(x0_[1] - xf_[1], v0y, a0y / 2.0, jerky / 6.0);
   Eigen::Vector4d coeff_jz(x0_[2] - xf_[2], v0z, a0z / 2.0, jerkz / 6.0);
 
-  /*  std::cout << "Coefficients for jerk" << std::endl;
+    std::cout << "Coefficients for jerk" << std::endl;
     std::cout << "Coeffx=" << coeff_jx.transpose() << std::endl;
     std::cout << "Coeffy=" << coeff_jy.transpose() << std::endl;
-    std::cout << "Coeffz=" << coeff_jz.transpose() << std::endl;*/
+    std::cout << "Coeffz=" << coeff_jz.transpose() << std::endl;
 
   Eigen::PolynomialSolver<double, Eigen::Dynamic> psolve_jx(coeff_jx);
   Eigen::PolynomialSolver<double, Eigen::Dynamic> psolve_jy(coeff_jy);
@@ -882,10 +885,10 @@ double SolverGurobi::getDTInitial() {
   Eigen::Vector3d coeff_ay(x0_[1] - xf_[1], v0y, 0.5 * accely);
   Eigen::Vector3d coeff_az(x0_[2] - xf_[2], v0z, 0.5 * accelz);
 
-  /*  std::cout << "Coefficients for accel" << std::endl;
+    std::cout << "Coefficients for accel" << std::endl;
     std::cout << "coeff_ax=" << coeff_ax.transpose() << std::endl;
     std::cout << "coeff_ay=" << coeff_ay.transpose() << std::endl;
-    std::cout << "coeff_az=" << coeff_az.transpose() << std::endl;*/
+    std::cout << "coeff_az=" << coeff_az.transpose() << std::endl;
 
   Eigen::PolynomialSolver<double, Eigen::Dynamic> psolve_ax(coeff_ax);
   Eigen::PolynomialSolver<double, Eigen::Dynamic> psolve_ay(coeff_ay);

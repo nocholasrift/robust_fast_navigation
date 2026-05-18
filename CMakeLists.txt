@@ -58,6 +58,7 @@ if(GUROBI_FOUND)
     ${PLANNER_INCLUDE_DIRS}
     ${GUROBI_INCLUDE_DIRS}
   )
+  target_compile_options(gurobi_planner PRIVATE -fPIC)
 
   list(APPEND PLANNER_LIBS gurobi_planner)
   list(APPEND PLANNER_INCLUDE_DIRS ${GUROBI_INCLUDE_DIRS})
@@ -66,21 +67,21 @@ if(GUROBI_FOUND)
   # Ceres (optional)
   ########################
   find_package(Ceres QUIET)
-  if(Ceres_FOUND)
-    if(TARGET Ceres::ceres)
-      list(APPEND ROS_PLANNER_SRCS
-        src/ph_demo.cpp
-        src/contour_wrapper.cpp
-      )
-      list(APPEND ROS_PLANNER_LIBS
-        Ceres::ceres
-        ipopt
-      )
-      add_definitions(-DCERES_FOUND)
-    else()
-      message(STATUS "Ceres found, but not as a target. Using Ceres as a library.")
-    endif()
-  endif()
+  # if(Ceres_FOUND)
+  #   if(TARGET Ceres::ceres)
+  #     list(APPEND ROS_PLANNER_SRCS
+  #       src/ph_demo.cpp
+  #       src/contour_wrapper.cpp
+  #     )
+  #     list(APPEND ROS_PLANNER_LIBS
+  #       Ceres::ceres
+  #       ipopt
+  #     )
+  #     add_definitions(-DCERES_FOUND)
+  #   else()
+  #     message(STATUS "Ceres found, but not as a target. Using Ceres as a library.")
+  #   endif()
+  # endif()
 
 else()
   message(STATUS "Gurobi not found, building without Gurobi support")

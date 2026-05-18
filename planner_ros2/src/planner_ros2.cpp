@@ -21,10 +21,10 @@ PlannerROS::PlannerROS() : Node("robust_planner_node") {
   _solver_traj_dt = this->declare_parameter<double>("solver_traj_dt", 0.05);
 
   // --- Vehicle / Dynamic Limits ---
-  _max_w = this->declare_parameter<double>("max_w", 1.0);
-  _max_vel = this->declare_parameter<double>("max_vel", 1.0);
-  _max_acc = this->declare_parameter<double>("max_acc", 1.0);
-  _max_jerk = this->declare_parameter<double>("max_jerk", 1.0);
+  _max_w = this->declare_parameter<double>("w_max", 1.0);
+  _max_vel = this->declare_parameter<double>("v_max", 1.0);
+  _max_acc = this->declare_parameter<double>("a_max", 1.0);
+  _max_jerk = this->declare_parameter<double>("j_max", 1.0);
 
   // --- Logic / Flags ---
   _max_dev = this->declare_parameter<double>("max_deviation", 1.0);
@@ -87,7 +87,7 @@ PlannerROS::PlannerROS() : Node("robust_planner_node") {
 #endif
 
   auto positive_or_warn = [this](double value, const std::string &name) {
-    if (value <= 0.0) {
+    if (value <= 1e-3) {
       RCLCPP_WARN(this->get_logger(),
                   "Parameter '%s' is non-positive (%f). "
                   "This may cause planner instability.",

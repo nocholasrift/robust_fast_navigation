@@ -1,8 +1,8 @@
 robust_planner_node:
   ros__parameters:
     # Solver selection: "gcopter", "faster", or "contour"
-    # solver: "faster"
-    solver: "gcopter"
+    solver: "faster"
+    # solver: "gcopter"
 
     # Frequency and Timing
     planner_frequency: 0.35
