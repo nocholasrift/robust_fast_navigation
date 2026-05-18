@@ -7,142 +7,256 @@
 using namespace std::chrono_literals;
 
 PlannerROS::PlannerROS() : Node("robust_planner_node") {
-  // --- 1. Declare and Get Parameters ---
-  // Note: ROS 2 requires declaration. Using this->declare_parameter(name,
-  // default_value) General Planner Params
-  _solver_str = this->declare_parameter("solver", "faster");
-  _dt = this->declare_parameter("planner_frequency", 0.1);
-  _lookahead = this->declare_parameter("lookahead", 0.15);
-  _traj_dt = this->declare_parameter("traj_dt", 0.1);
-  _max_solve_time = this->declare_parameter("max_solve_time", 0.2);
-  _solver_traj_dt = this->declare_parameter("solver_traj_dt", 0.05);
 
-  // Logic and Flags
-  _max_dev = this->declare_parameter("max_deviation", 1.0);
-  _simplify_jps = this->declare_parameter("simplify_jps", false);
-  _jps_hysteresis = this->declare_parameter("jps_hysteresis", false);
-  _failsafe_count = this->declare_parameter("failsafe_count", 2);
-  _plan_in_free = this->declare_parameter("plan_in_free", false);
-  _max_dist_horizon = this->declare_parameter("max_dist_horizon", 4.0);
-  _frame_str = this->declare_parameter("frame", "map");
-  _is_teleop = this->declare_parameter("teleop", false);
-  _max_polys = this->declare_parameter("max_polys", 4);
-  _use_arclen = this->declare_parameter("use_arclen", false);
-  _use_global_costmap = this->declare_parameter("use_global_costmap", true);
-  _plan_once = this->declare_parameter("plan_once", false);
+  _solver_str = this->declare_parameter<std::string>("solver", "faster");
 
-  // Clearance and Triggers
-  _min_turn_clearance = this->declare_parameter("min_turn_clearance", 0.1);
-  _trigger_trim_dist = this->declare_parameter("trigger_trim_dist", -100.0);
+  // NOTE:
+  // planner_frequency is actually being used as a TIMER PERIOD (dt).
+  // Keeping behavior unchanged for backwards compatibility.
+  _dt = this->declare_parameter<double>("planner_frequency", 0.1);
 
-  // Task Specific
-  _is_barn = this->declare_parameter("is_barn", false);
-  _barn_goal_dist = this->declare_parameter("barn_goal_dist", 10.0);
-  _is_drone = this->declare_parameter("is_drone", false);
+  _lookahead = this->declare_parameter<double>("lookahead", 0.15);
+  _traj_dt = this->declare_parameter<double>("traj_dt", 0.1);
+  _max_solve_time = this->declare_parameter<double>("max_solve_time", 0.2);
+  _solver_traj_dt = this->declare_parameter<double>("solver_traj_dt", 0.05);
 
-  // Solver Optimization Params
-  _n_polys = this->declare_parameter("n_polys", 6);
-  _force_final_const = this->declare_parameter("force_final_const", true);
-  _factor_init = this->declare_parameter("factor_init", 1.0);
-  _factor_final = this->declare_parameter("factor_final", 10.0);
-  _factor_increment = this->declare_parameter("factor_increment", 1.0);
-  _n_threads = this->declare_parameter("threads", 0);
-  _solver_verbose = this->declare_parameter("verbose", 0);
+  // --- Vehicle / Dynamic Limits ---
+  _max_w = this->declare_parameter<double>("max_w", 1.0);
+  _max_vel = this->declare_parameter<double>("max_vel", 1.0);
+  _max_acc = this->declare_parameter<double>("max_acc", 1.0);
+  _max_jerk = this->declare_parameter<double>("max_jerk", 1.0);
 
-  // --- 2. Initialize Planner Core Params ---
+  // --- Logic / Flags ---
+  _max_dev = this->declare_parameter<double>("max_deviation", 1.0);
+
+  _simplify_jps = this->declare_parameter<bool>("simplify_jps", false);
+  _jps_hysteresis = this->declare_parameter<bool>("jps_hysteresis", false);
+
+  _failsafe_count = this->declare_parameter<int>("failsafe_count", 2);
+
+  _plan_in_free = this->declare_parameter<bool>("plan_in_free", false);
+
+  _max_dist_horizon = this->declare_parameter<double>("max_dist_horizon", 4.0);
+
+  _frame_str = this->declare_parameter<std::string>("frame", "map");
+
+  _is_teleop = this->declare_parameter<bool>("teleop", false);
+
+  _max_polys = this->declare_parameter<int>("max_polys", 4);
+
+  _use_arclen = this->declare_parameter<bool>("use_arclen", false);
+
+  _use_global_costmap =
+      this->declare_parameter<bool>("use_global_costmap", true);
+
+  _plan_once = this->declare_parameter<bool>("plan_once", false);
+
+  _use_minvo = this->declare_parameter<bool>("use_minvo", false);
+
+  // --- Clearance / Triggering ---
+  _min_turn_clearance =
+      this->declare_parameter<double>("min_turn_clearance", 0.1);
+
+  _trigger_trim_dist =
+      this->declare_parameter<double>("trigger_trim_dist", -100.0);
+
+  // --- Task Specific ---
+  _is_barn = this->declare_parameter<bool>("is_barn", false);
+
+  _barn_goal_dist = this->declare_parameter<double>("barn_goal_dist", 10.0);
+
+  _is_drone = this->declare_parameter<bool>("is_drone", false);
+
+  // --- Solver Optimization Params ---
+  _n_polys = this->declare_parameter<int>("n_polys", 6);
+
+  _force_final_const = this->declare_parameter<bool>("force_final_const", true);
+
+  _factor_init = this->declare_parameter<double>("factor_init", 1.0);
+
+  _factor_final = this->declare_parameter<double>("factor_final", 10.0);
+
+  _factor_increment = this->declare_parameter<double>("factor_increment", 1.0);
+
+  _n_threads = this->declare_parameter<int>("threads", 0);
+
+  _solver_verbose = this->declare_parameter<int>("verbose", 0);
+
+#ifdef MRS_MSGS_FOUND
+  _use_mpc = this->declare_parameter<bool>("robust_planner.use_mpc", true);
+#endif
+
+  auto positive_or_warn = [this](double value, const std::string &name) {
+    if (value <= 0.0) {
+      RCLCPP_WARN(this->get_logger(),
+                  "Parameter '%s' is non-positive (%f). "
+                  "This may cause planner instability.",
+                  name.c_str(), value);
+    }
+  };
+
+  positive_or_warn(_dt, "planner_frequency");
+  positive_or_warn(_traj_dt, "traj_dt");
+  positive_or_warn(_solver_traj_dt, "solver_traj_dt");
+  positive_or_warn(_max_vel, "max_vel");
+  positive_or_warn(_max_acc, "max_acc");
+  positive_or_warn(_max_jerk, "max_jerk");
+  positive_or_warn(_max_w, "max_w");
+
   _planner_params.SOLVER = _solver_str;
+
   _planner_params.W_MAX = _max_w;
   _planner_params.V_MAX = _max_vel;
   _planner_params.A_MAX = _max_acc;
   _planner_params.J_MAX = _max_jerk;
+
   _planner_params.DT_FACTOR_INIT = _factor_init;
   _planner_params.DT_FACTOR_FINAL = _factor_final;
   _planner_params.DT_FACTOR_INCREMENT = _factor_increment;
+
   _planner_params.SOLVER_TRAJ_DT = _solver_traj_dt;
+
   _planner_params.TRIM_DIST = _trigger_trim_dist;
+
   _planner_params.N_SEGMENTS = _n_polys;
   _planner_params.MAX_POLYS = _max_polys;
+
   _planner_params.N_THREADS = _n_threads;
+
   _planner_params.FORCE_FINAL_CONSTRAINT = _force_final_const;
+
   _planner_params.VERBOSE = _solver_verbose;
+
   _planner_params.USE_MINVO = _use_minvo;
+
   _planner_params.PLAN_IN_FREE = _plan_in_free;
+
   _planner_params.SIMPLIFY_JPS = _simplify_jps;
+
   _planner_params.MAX_SOLVE_TIME = _max_solve_time;
 
   _planner.set_params(_planner_params);
 
-  // --- 3. Publishers ---
-  // QoS: 10 is standard for "last will" or "reliable". Use 1 or KeepLast(1) for
-  // high-freq.
+  RCLCPP_INFO(this->get_logger(), "========== Planner Params ==========");
+  RCLCPP_INFO(this->get_logger(), "solver            : %s",
+              _solver_str.c_str());
+
+  RCLCPP_INFO(this->get_logger(), "planner_dt        : %.3f", _dt);
+  RCLCPP_INFO(this->get_logger(), "traj_dt           : %.3f", _traj_dt);
+  RCLCPP_INFO(this->get_logger(), "solver_traj_dt    : %.3f", _solver_traj_dt);
+
+  RCLCPP_INFO(this->get_logger(), "max_vel           : %.3f", _max_vel);
+  RCLCPP_INFO(this->get_logger(), "max_acc           : %.3f", _max_acc);
+  RCLCPP_INFO(this->get_logger(), "max_jerk          : %.3f", _max_jerk);
+  RCLCPP_INFO(this->get_logger(), "max_w             : %.3f", _max_w);
+
+  RCLCPP_INFO(this->get_logger(), "n_polys           : %d", _n_polys);
+  RCLCPP_INFO(this->get_logger(), "max_polys         : %d", _max_polys);
+
+  RCLCPP_INFO(this->get_logger(), "====================================");
+
+  // ============================================================
+  // 5. Publishers
+  // ============================================================
+
   gridMapPub =
       this->create_publisher<nav_msgs::msg::OccupancyGrid>("/grid_map", 10);
+
   trajVizPub = this->create_publisher<visualization_msgs::msg::Marker>(
       "/MINCO_path", 10);
+
   trajPub = this->create_publisher<trajectory_msgs::msg::JointTrajectory>(
       "/reference_trajectory", 10);
+
   meshPub = this->create_publisher<visualization_msgs::msg::Marker>(
       "/visualizer/mesh", 10);
+
   edgePub = this->create_publisher<visualization_msgs::msg::Marker>(
       "/visualizer/edge", 10);
+
   initPointPub = this->create_publisher<geometry_msgs::msg::PointStamped>(
       "/initPoint", 10);
+
   goalPub = this->create_publisher<geometry_msgs::msg::PoseStamped>(
       "/global_planner/goal", 10);
+
   paddedLaserPub =
       this->create_publisher<visualization_msgs::msg::Marker>("/paddedObs", 10);
+
   jpsPub = this->create_publisher<nav_msgs::msg::Path>("/jpsPath", 10);
+
   corridorPub = this->create_publisher<geometry_msgs::msg::PoseArray>(
       "/polyCorridor", 10);
+
   initialPVAJPub =
       this->create_publisher<trajectory_msgs::msg::JointTrajectoryPoint>(
           "/initial_pvaj", 10);
 
-  // --- 4. Services (Clients) ---
+  // ============================================================
+  // 6. Service Clients
+  // ============================================================
+
   estop_client = this->create_client<std_srvs::srv::Empty>("/switch_mode");
+
   _mpc_backup_client = this->create_client<std_srvs::srv::Empty>("/mpc_backup");
 
 #ifdef MRS_MSGS_FOUND
-  _use_mpc = this->declare_parameter("robust_planner.use_mpc", true);
-  // Note: Service type needs to be the ROS2 equivalent if available
   _mrs_traj_client = this->create_client<mrs_msgs::srv::TrajectoryReferenceSrv>(
       "/uav1/control_manager/trajectory_reference");
 #endif
 
-  // --- 5. Subscribers ---
+  // ============================================================
+  // 7. Subscribers
+  // ============================================================
+
   mapSub = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
       "/map", 1, std::bind(&PlannerROS::mapcb, this, std::placeholders::_1));
+
   goalSub = this->create_subscription<geometry_msgs::msg::PoseStamped>(
       "/planner_goal", 1,
       std::bind(&PlannerROS::goalcb, this, std::placeholders::_1));
+
   laserSub = this->create_subscription<sensor_msgs::msg::LaserScan>(
       "/front/scan", 1,
       std::bind(&PlannerROS::lasercb, this, std::placeholders::_1));
+
   odomSub = this->create_subscription<nav_msgs::msg::Odometry>(
       "/odometry/filtered", 1,
       std::bind(&PlannerROS::odomcb, this, std::placeholders::_1));
+
   MPCHorizonSub =
       this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
           "/mpc_horizon", 1,
           std::bind(&PlannerROS::mpcHorizoncb, this, std::placeholders::_1));
+
   clickedPointSub = this->create_subscription<geometry_msgs::msg::PointStamped>(
       "/clicked_point", 1,
       std::bind(&PlannerROS::clickedPointcb, this, std::placeholders::_1));
 
-  // --- 6. Timers ---
-  // In ROS2, timers use chrono durations
+  // ============================================================
+  // 8. Timers
+  // ============================================================
+
+  using namespace std::chrono_literals;
+
   safetyTimer = this->create_wall_timer(
       500ms, std::bind(&PlannerROS::mapPublisher, this));
+
   goalTimer = this->create_wall_timer(std::chrono::duration<double>(_dt / 2.0),
                                       std::bind(&PlannerROS::goalLoop, this));
+
   controlTimer =
       this->create_wall_timer(std::chrono::duration<double>(_dt),
                               std::bind(&PlannerROS::controlLoop, this));
+
   publishTimer =
       this->create_wall_timer(std::chrono::duration<double>(_dt * 2.0),
                               std::bind(&PlannerROS::publishOccupied, this));
 
-  // --- 7. State Initialization ---
+  // ============================================================
+  // 9. State Initialization
+  // ============================================================
+
   _is_occ = false;
   _is_init = false;
   _planned = false;
@@ -154,12 +268,16 @@ PlannerROS::PlannerROS() : Node("robust_planner_node") {
   _mpc_backwards = false;
 
   _prev_plan_status = PlannerStatus::SUCCESS;
+
   _prev_jps_path.clear();
-  _prev_jps_cost = -1;
+
+  _prev_jps_cost = -1.0;
+
   _curr_horizon = _max_dist_horizon;
 
-  RCLCPP_INFO(this->get_logger(), "Initialized planner!");
   sentTraj.points.clear();
+
+  RCLCPP_INFO(this->get_logger(), "Initialized robust planner node!");
 }
 
 PlannerROS::~PlannerROS() {

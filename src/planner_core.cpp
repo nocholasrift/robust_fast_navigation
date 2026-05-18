@@ -78,11 +78,11 @@ void Planner::set_start(const Eigen::MatrixXd &start) {
 }
 
 // void set_start_from_traj(
-//   const Eigen::Vector3d& current_pose, 
-//   std::shared_ptr<const Trajectory> traj, 
+//   const Eigen::Vector3d& current_pose,
+//   std::shared_ptr<const Trajectory> traj,
 //   double duration_since_start)
 // {
-//   // _traj_dt = 
+//   // _traj_dt =
 //   // Eigen::Vector3d
 // }
 
@@ -367,16 +367,16 @@ PlannerStatus Planner::plan(double horizon,
   _traj = _solver->get_trajectory();
 
   // ensure trajectory does not overlap lethal obstacles
-  for (int i = 0; i < _traj.size(); ++i) {
-    Eigen::Vector2d pos = _traj[i].pos.head(2);
-    /*if (_map.is_occupied(pos[0], pos[1], "obstacles"))*/
-    if (_map.get_cost(pos(0), pos(1), map_util::Layer::kObstacles)) {
-      std::cout << termcolor::red
-                << "[Planner Core] Trajectory overlaps obstacle"
-                << termcolor::reset << std::endl;
-      return PlannerStatus::TRAJ_GEN_FAIL;
-    }
-  }
+  // for (int i = 0; i < _traj.size(); ++i) {
+  //   Eigen::Vector2d pos = _traj[i].pos.head(2);
+  //   /*if (_map.is_occupied(pos[0], pos[1], "obstacles"))*/
+  //   if (_map.get_cost(pos(0), pos(1), map_util::Layer::kObstacles)) {
+  //     std::cout << termcolor::red
+  //               << "[Planner Core] Trajectory overlaps obstacle"
+  //               << termcolor::reset << std::endl;
+  //     return PlannerStatus::TRAJ_GEN_FAIL;
+  //   }
+  // }
 
   _is_start_set = false;
   _is_goal_set = false;
